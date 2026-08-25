@@ -28,10 +28,8 @@ jobs:
 
       - name: Expo Prebuild (iOS, clean)
         run: npx expo prebuild --platform ios --clean
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Build unsigned IPA
+      - name: Build unsigned IPA with Widget
         run: |
           xcodebuild \
             -workspace ios/Tally.xcworkspace \
@@ -53,7 +51,7 @@ jobs:
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r tally.ipa Payload/
-          echo "IPA packaged successfully"
+          echo "IPA packaged successfully with widget included"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
