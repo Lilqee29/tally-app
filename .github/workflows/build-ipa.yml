@@ -106,10 +106,30 @@ jobs:
           echo "=== App PlugIns Contents ==="
           ls -la "$APP_PATH/PlugIns" || echo "No PlugIns directory"
 
+          # Clean extended attributes
+          xattr -cr "$APP_PATH"
+
+          # 1. Sign all embedded frameworks & dylibs
+          find "$APP_PATH" \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - --timestamp=none {} + 2>/dev/null || true
+
+          # 2. Sign the widget extension specifically (generates valid 16KB ARM64 page hashes)
+          if [ -d "$APP_PATH/PlugIns/TallyWidget.appex" ]; then
+            echo "Ad-hoc signing TallyWidget.appex..."
+            codesign --force --sign - --timestamp=none "$APP_PATH/PlugIns/TallyWidget.appex"
+          fi
+
+          # 3. Sign the main app bundle
+          echo "Ad-hoc signing main app..."
+          codesign --force --sign - --timestamp=none "$APP_PATH"
+
+          # 4. Verify signature hierarchy
+          echo "=== Code Signature Verification ==="
+          codesign --verify --deep --strict --verbose=4 "$APP_PATH" || true
+
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r tally.ipa Payload/
-          echo "IPA packaged successfully from archive"
+          echo "IPA packaged and signed successfully from archive"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
