@@ -308,6 +308,7 @@ struct SingleTaskWidgetView: View {
                     }
                 }
                 .padding(4)
+                .widgetURL(URL(string: "tally://toggle/\(question.id)"))
             } else {
                 // Medium single task widget (image1.jpg)
                 HStack(alignment: .center) {
@@ -333,6 +334,7 @@ struct SingleTaskWidgetView: View {
                     }
                 }
                 .padding(.horizontal, 12)
+                .widgetURL(URL(string: "tally://toggle/\(question.id)"))
             }
         }
     }
@@ -358,48 +360,50 @@ struct MultiTaskWidgetView: View {
                     let isYes = ans?.value == "yes"
                     let isNo = ans?.value == "no"
 
-                    HStack(alignment: .center, spacing: 8) {
-                        // Title + timestamp subtitle
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(question.title)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            
-                            if let answeredAt = ans?.answeredAt, isYes {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 9))
-                                    Text(formatTimestamp(answeredAt))
-                                        .font(.system(size: 11))
+                    Link(destination: URL(string: "tally://toggle/\(question.id)")!) {
+                        HStack(alignment: .center, spacing: 8) {
+                            // Title + timestamp subtitle
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(question.title)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                
+                                if let answeredAt = ans?.answeredAt, isYes {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 9))
+                                        Text(formatTimestamp(answeredAt))
+                                            .font(.system(size: 11))
+                                    }
+                                    .foregroundColor(Color(hex: "#8E8E93"))
                                 }
-                                .foregroundColor(Color(hex: "#8E8E93"))
                             }
-                        }
 
-                        Spacer()
+                            Spacer()
 
-                        // Color Dot indicator
-                        Circle()
-                            .fill(Color(hex: question.dotColor))
-                            .frame(width: 10, height: 10)
+                            // Color Dot indicator
+                            Circle()
+                                .fill(Color(hex: question.dotColor))
+                                .frame(width: 10, height: 10)
 
-                        // YES / NO state badge
-                        if isYes {
-                            Text("YES")
-                                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                .foregroundColor(Color(hex: "#0A84FF"))
-                                .frame(width: 48, alignment: .trailing)
-                        } else if isNo {
-                            Text("NO")
-                                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                .foregroundColor(Color(hex: "#FF3B30"))
-                                .frame(width: 48, alignment: .trailing)
-                        } else {
-                            Text("NO")
-                                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
-                                .frame(width: 48, alignment: .trailing)
+                            // YES / NO state badge
+                            if isYes {
+                                Text("YES")
+                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                    .foregroundColor(Color(hex: "#0A84FF"))
+                                    .frame(width: 48, alignment: .trailing)
+                            } else if isNo {
+                                Text("NO")
+                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                    .foregroundColor(Color(hex: "#FF3B30"))
+                                    .frame(width: 48, alignment: .trailing)
+                            } else {
+                                Text("NO")
+                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                    .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
+                                    .frame(width: 48, alignment: .trailing)
+                            }
                         }
                     }
                 }

@@ -2,6 +2,7 @@ module.exports = {
   expo: {
     name: 'Tally',
     slug: 'tally-app',
+    scheme: 'tally',
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
