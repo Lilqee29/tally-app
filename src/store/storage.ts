@@ -76,7 +76,7 @@ export async function saveState(state: TallyState): Promise<void> {
  * Write a slim, widget-readable snapshot to the shared App Group UserDefaults.
  * The Swift widget reads this JSON from the same key.
  */
-async function syncToWidget(state: TallyState): Promise<void> {
+export async function syncToWidget(state: TallyState): Promise<void> {
   try {
     const todayStr = today();
     const todayAnswers = state.answers.filter((a) => a.date === todayStr);
@@ -104,6 +104,8 @@ async function syncToWidget(state: TallyState): Promise<void> {
       })),
       todayAnswers,
       weekHistory,
+      appearance: state.settings.widgetAppearance || 'auto',
+      coloredText: state.settings.coloredText,
       updatedAt: new Date().toISOString(),
     };
 
@@ -113,7 +115,6 @@ async function syncToWidget(state: TallyState): Promise<void> {
       APP_GROUP
     );
   } catch (e) {
-    // On non-iOS or simulator without App Group, this will fail silently
-    console.warn('[Tally] syncToWidget error (expected on Android/sim):', e);
+    console.warn('[Tally] syncToWidget error:', e);
   }
 }

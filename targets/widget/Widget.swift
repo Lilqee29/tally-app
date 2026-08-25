@@ -32,6 +32,8 @@ struct WidgetPayload: Codable {
     let questions: [TallyQuestion]
     let todayAnswers: [TallyAnswer]
     let weekHistory: [String: [String: String]]  // questionId → date → "yes"|"no"
+    let appearance: String?                      // "auto" | "light" | "dark"
+    let coloredText: Bool?
     let updatedAt: String
 }
 
@@ -111,6 +113,8 @@ struct MarkAnswerIntent: AppIntent {
             questions: payload.questions,
             todayAnswers: newAnswers,
             weekHistory: payload.weekHistory,
+            appearance: payload.appearance,
+            coloredText: payload.coloredText,
             updatedAt: ISO8601DateFormatter().string(from: Date())
         )
         savePayload(updated)
@@ -129,6 +133,8 @@ struct TallyEntry: TimelineEntry {
     let todayAnswer: TallyAnswer?
     let weekDots: [DotState]
     let showWeekHistory: Bool
+    let appearance: String
+    let coloredText: Bool
 }
 
 enum DotState {
@@ -144,7 +150,15 @@ struct TallyProvider: AppIntentTimelineProvider {
     typealias Intent = TallyWidgetIntent
 
     func placeholder(in context: Context) -> TallyEntry {
-        TallyEntry(date: Date(), question: nil, todayAnswer: nil, weekDots: Array(repeating: .unanswered, count: 7), showWeekHistory: true)
+        TallyEntry(
+            date: Date(),
+            question: nil,
+            todayAnswer: nil,
+            weekDots: Array(repeating: .unanswered, count: 7),
+            showWeekHistory: true,
+            appearance: "auto",
+            coloredText: true
+        )
     }
 
     func snapshot(for configuration: TallyWidgetIntent, in context: Context) async -> TallyEntry {
@@ -158,13 +172,30 @@ struct TallyProvider: AppIntentTimelineProvider {
     }
 
     private func makeEntry(for question: TallyQuestion?, configuration: TallyWidgetIntent) -> TallyEntry {
-        guard let q = question, let payload = loadPayload() else {
-            return TallyEntry(date: Date(), question: nil, todayAnswer: nil, weekDots: Array(repeating: .unanswered, count: 7), showWeekHistory: configuration.showWeekHistory)
+        guard let payload = loadPayload() else {
+            return TallyEntry(
+                date: Date(),
+                question: question,
+                todayAnswer: nil,
+                weekDots: Array(repeating: .unanswered, count: 7),
+                showWeekHistory: configuration.showWeekHistory,
+                appearance: "auto",
+                coloredText: true
+            )
         }
+        let q = question ?? payload.questions.first
         let today = isoToday()
-        let todayAnswer = payload.todayAnswers.first { $0.questionId == q.id && $0.date == today }
-        let weekDots = buildWeekDots(questionId: q.id, weekHistory: payload.weekHistory)
-        return TallyEntry(date: Date(), question: q, todayAnswer: todayAnswer, weekDots: weekDots, showWeekHistory: configuration.showWeekHistory)
+        let todayAnswer = q != nil ? payload.todayAnswers.first { $0.questionId == q!.id && $0.date == today } : nil
+        let weekDots = q != nil ? buildWeekDots(questionId: q!.id, weekHistory: payload.weekHistory) : Array(repeating: .unanswered, count: 7)
+        return TallyEntry(
+            date: Date(),
+            question: q,
+            todayAnswer: todayAnswer,
+            weekDots: weekDots,
+            showWeekHistory: configuration.showWeekHistory,
+            appearance: payload.appearance ?? "auto",
+            coloredText: payload.coloredText ?? true
+        )
     }
 }
 
@@ -174,32 +205,52 @@ struct TallyProvider: AppIntentTimelineProvider {
 
 struct TallyWidgetView: View {
     var entry: TallyEntry
-    @Environment(\.widgetFamily) var family
+    @Environment(\.colorScheme) var systemColorScheme
+
+    var isDark: Bool {
+        switch entry.appearance {
+        case "light": return false
+        case "dark": return true
+        default: return systemColorScheme == .dark
+        }
+    }
+
+    var bgColor: Color {
+        isDark ? Color(hex: "#1C1C1E") : Color(hex: "#FFFFFF")
+    }
+
+    var textColor: Color {
+        isDark ? Color(hex: "#FFFFFF") : Color(hex: "#000000")
+    }
+
+    var subtextColor: Color {
+        isDark ? Color(hex: "#8E8E93") : Color(hex: "#636366")
+    }
 
     var body: some View {
         if let q = entry.question {
             ZStack {
-                Color(hex: "#1C1C1E")
+                bgColor
                 HStack(alignment: .center, spacing: 0) {
-                    // Left: title + timestamp
+                    // Left: title + timestamp + dots
                     VStack(alignment: .leading, spacing: 4) {
                         Text(q.title)
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(textColor)
                             .lineLimit(3)
                         if let ans = entry.todayAnswer {
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle")
                                     .font(.system(size: 11))
-                                    .foregroundColor(Color(hex: "#8E8E93"))
+                                    .foregroundColor(subtextColor)
                                 Text(formatTimestamp(ans.answeredAt))
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(Color(hex: "#8E8E93"))
+                                    .foregroundColor(subtextColor)
                             }
                         }
                         if entry.showWeekHistory {
                             Spacer(minLength: 6)
-                            DotRowView(dots: entry.weekDots, dotColor: Color(hex: q.dotColor))
+                            DotRowView(dots: entry.weekDots, dotColor: Color(hex: q.dotColor), isDark: isDark)
                         }
                     }
                     Spacer()
@@ -210,10 +261,10 @@ struct TallyWidgetView: View {
             }
         } else {
             ZStack {
-                Color(hex: "#1C1C1E")
+                bgColor
                 Text("Tap to configure")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color(hex: "#8E8E93"))
+                    .foregroundColor(subtextColor)
             }
         }
     }
@@ -233,7 +284,7 @@ struct TallyWidgetView: View {
                 Button(intent: MarkAnswerIntent(questionId: questionId, value: "yes")) {
                     Text("?")
                         .font(.system(size: 38, weight: .black))
-                        .foregroundColor(Color(hex: "#48484A"))
+                        .foregroundColor(isDark ? Color(hex: "#48484A") : Color(hex: "#C7C7CC"))
                 }
                 .buttonStyle(.plain)
             }
@@ -244,6 +295,7 @@ struct TallyWidgetView: View {
 struct DotRowView: View {
     let dots: [DotState]
     let dotColor: Color
+    let isDark: Bool
 
     var body: some View {
         HStack(spacing: 4) {
@@ -258,8 +310,8 @@ struct DotRowView: View {
     private func dotFill(_ state: DotState) -> Color {
         switch state {
         case .yes: return dotColor
-        case .no: return Color(hex: "#2C2C2E")
-        case .unanswered: return Color(hex: "#2C2C2E").opacity(0.5)
+        case .no: return isDark ? Color(hex: "#2C2C2E") : Color(hex: "#E5E5EA")
+        case .unanswered: return isDark ? Color(hex: "#2C2C2E").opacity(0.5) : Color(hex: "#E5E5EA").opacity(0.6)
         }
     }
 }
@@ -275,7 +327,15 @@ struct TallyWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: kind, intent: TallyWidgetIntent.self, provider: TallyProvider()) { entry in
             TallyWidgetView(entry: entry)
-                .containerBackground(Color(hex: "#1C1C1E"), for: .widget)
+                .containerBackground(for: .widget) {
+                    if entry.appearance == "light" {
+                        Color(hex: "#FFFFFF")
+                    } else if entry.appearance == "dark" {
+                        Color(hex: "#1C1C1E")
+                    } else {
+                        Color(hex: "#1C1C1E")
+                    }
+                }
         }
         .configurationDisplayName("Tasks")
         .description("Track your daily tasks at a glance.")

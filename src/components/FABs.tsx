@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
 import { View, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 
 interface FABsProps {
@@ -27,14 +26,9 @@ export function FABs({ onAdd, onFlame, streakActive }: FABsProps) {
       <Animated.View style={{ transform: [{ scale: flameScale }] }}>
         <TouchableOpacity onPress={handleFlame} style={styles.flameFab} activeOpacity={0.8}>
           {streakActive ? (
-            <LinearGradient
-              colors={[colors.accent.streakStart, colors.accent.streakMid, colors.accent.streakEnd]}
-              start={{ x: 0, y: 1 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.flameGradientBg}
-            >
-              <Ionicons name="flame" size={22} color="#fff" />
-            </LinearGradient>
+            <View style={[styles.flameFabInner, styles.flameActiveBg]}>
+              <Ionicons name="flame" size={22} color="#FFFFFF" />
+            </View>
           ) : (
             <View style={[styles.flameFabInner, { backgroundColor: colors.bg.surface }]}>
               <Ionicons name="flame-outline" size={22} color={colors.text.secondary} />
@@ -60,7 +54,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
   // Add button
   addFab: {
@@ -71,12 +65,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
-  // Flame button (idle)
+  // Flame button
   flameFab: {
     width: 44,
     height: 44,
@@ -90,11 +84,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  flameGradientBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+  flameActiveBg: {
+    backgroundColor: '#FF6B00',
+    shadowColor: '#FF6B00',
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
   },
 });

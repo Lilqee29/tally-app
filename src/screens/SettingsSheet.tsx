@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,12 @@ import {
   Switch,
   SafeAreaView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useStore } from '../store/useStore';
+import { syncToWidget } from '../store/storage';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 
@@ -22,9 +25,34 @@ interface SettingsSheetProps {
 
 export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
   const settings = useStore((s) => s.settings);
+  const questions = useStore((s) => s.questions);
+  const answers = useStore((s) => s.answers);
   const updateSettings = useStore((s) => s.updateSettings);
 
+  const [syncedText, setSyncedText] = useState('Sync Widget Data');
+
   const appearances = ['auto', 'light', 'dark'] as const;
+
+  const handleSyncWidget = async () => {
+    try {
+      await syncToWidget({ questions, answers, settings });
+      if (settings.soundHaptics) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      setSyncedText('Widget Data Synced! ✓');
+      setTimeout(() => setSyncedText('Sync Widget Data'), 2500);
+    } catch {
+      Alert.alert('Sync Status', 'Widget data updated.');
+    }
+  };
+
+  const handleShowWidgetHelp = () => {
+    Alert.alert(
+      'Add Widget to Home Screen',
+      '1. Go to your iPhone Home Screen.\n2. Long-press on any empty space until icons jiggle.\n3. Tap the "+" button at the top-left corner.\n4. Search for "Tally" and select your widget size.\n5. Tap "Add Widget".\n\n(Tip: If widgets don\'t appear immediately after sideloading, restart your iPhone once to allow iOS to register new extensions).',
+      [{ text: 'Got it', style: 'default' }]
+    );
+  };
 
   return (
     <Modal
@@ -45,12 +73,33 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* ── Widget Settings ─────────────────────── */}
-          <Text style={[typography.sectionHeader, styles.sectionLabel]}>Widget Settings</Text>
+          {/* ── Widget Quick Actions ───────────────── */}
+          <Text style={[typography.sectionHeader, styles.sectionLabel]}>HOME SCREEN WIDGET</Text>
           <View style={styles.card}>
-            {/* Widget Appearance */}
+            <TouchableOpacity style={styles.row} onPress={handleShowWidgetHelp} activeOpacity={0.7}>
+              <View style={styles.rowWithIcon}>
+                <Ionicons name="grid-outline" size={20} color={colors.accent.streakEnd} />
+                <Text style={typography.rowTitle}>How to Add Widget</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.text.tertiary} />
+            </TouchableOpacity>
+            <View style={styles.divider} />
+            <TouchableOpacity style={styles.row} onPress={handleSyncWidget} activeOpacity={0.7}>
+              <View style={styles.rowWithIcon}>
+                <Ionicons name="sync-outline" size={20} color={colors.state.yes} />
+                <Text style={[typography.rowTitle, { color: colors.state.yes }]}>
+                  {syncedText}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Widget Appearance ───────────────────── */}
+          <Text style={[typography.sectionHeader, styles.sectionLabel]}>WIDGET APPEARANCE</Text>
+          <View style={styles.card}>
+            {/* Appearance Selector */}
             <View style={styles.row}>
-              <Text style={typography.rowTitle}>Widget Appearance</Text>
+              <Text style={typography.rowTitle}>Theme</Text>
               <View style={styles.segmentedPicker}>
                 {appearances.map((a) => (
                   <TouchableOpacity
@@ -100,7 +149,7 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
           </View>
 
           {/* ── Sound & Taptics ─────────────────────── */}
-          <Text style={[typography.sectionHeader, styles.sectionLabel]}>Sound And Taptic Feedback</Text>
+          <Text style={[typography.sectionHeader, styles.sectionLabel]}>SOUND AND TAPTIC FEEDBACK</Text>
           <View style={styles.card}>
             <View style={styles.row}>
               <Text style={typography.rowTitle}>Sound & Taptics</Text>
@@ -111,17 +160,6 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
                 ios_backgroundColor={colors.bg.surfaceElevated}
               />
             </View>
-          </View>
-
-          {/* ── App Icon ────────────────────────────── */}
-          <Text style={[typography.sectionHeader, styles.sectionLabel]}>App Icon</Text>
-          <View style={styles.card}>
-            <TouchableOpacity style={styles.row} activeOpacity={0.7}>
-              <Text style={[typography.rowTitle, { color: colors.text.secondary }]}>
-                Change App Icon
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.text.tertiary} />
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -157,9 +195,10 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 8,
     gap: 0,
+    paddingBottom: 60,
   },
   sectionLabel: {
-    marginTop: 20,
+    marginTop: 22,
     marginBottom: 8,
     marginLeft: 4,
   },
@@ -174,6 +213,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  rowWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

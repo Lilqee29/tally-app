@@ -16,7 +16,6 @@ import { AddEditSheet } from './AddEditSheet';
 import { SettingsSheet } from './SettingsSheet';
 import { HeatmapSheet } from './HeatmapSheet';
 import { colors } from '../theme/colors';
-import { typography } from '../theme/typography';
 import { getStreak } from '../store/streaks';
 import { Question } from '../store/storage';
 
@@ -35,20 +34,13 @@ export function MainScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [heatmapQuestionId, setHeatmapQuestionId] = useState<string | null>(null);
 
-  // Check if any question has an active streak (for flame FAB gradient)
+  // Check if any question has an active streak (for flame FAB highlight)
   const streakActive = questions.some((q) => getStreak(q.id, answers) > 0);
 
   const sortedQuestions = [...questions].sort((a, b) => a.order - b.order);
 
   const handleDelete = (id: string) => {
-    Alert.alert('Delete Question', 'This will also remove all its history. Continue?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => deleteQuestion(id),
-      },
-    ]);
+    deleteQuestion(id);
   };
 
   const handleMove = (index: number, direction: 'up' | 'down') => {
@@ -121,7 +113,7 @@ export function MainScreen() {
           setShowAdd(true);
         }}
         onFlame={() => {
-          // Open heatmap for first question (user can navigate inside)
+          // Open heatmap for first question
           if (questions.length > 0) {
             setHeatmapQuestionId(sortedQuestions[0].id);
           }
@@ -158,6 +150,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.page,
   },
   listContent: {
+    paddingTop: 14,
     paddingBottom: 140,
   },
   emptyState: {
