@@ -54,18 +54,32 @@ enum DotState {
 // ─────────────────────────────────────────────
 
 func loadPayload() -> WidgetPayload? {
-    // Read from shared App Group UserDefaults written by react-native-shared-group-preferences
-    guard let suite = UserDefaults(suiteName: APP_GROUP) else { return nil }
-
-    // react-native-shared-group-preferences stores value as a raw string
-    if let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
-       let data = jsonStr.data(using: .utf8),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-        return payload
+    // 1. Read from shared App Group File container
+    if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP) {
+        let fileURL = containerURL.appendingPathComponent("tally_widget_data.json")
+        if let data = try? Data(contentsOf: fileURL),
+           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+            return payload
+        }
     }
 
-    // Also try if stored as raw Data
-    if let data = suite.data(forKey: WIDGET_DATA_KEY),
+    // 2. Read from shared App Group UserDefaults (react-native-shared-group-preferences)
+    if let suite = UserDefaults(suiteName: APP_GROUP) {
+        if let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
+           let data = jsonStr.data(using: .utf8),
+           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+            return payload
+        }
+
+        if let data = suite.data(forKey: WIDGET_DATA_KEY),
+           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+            return payload
+        }
+    }
+
+    // 3. Fallback: Standard UserDefaults
+    if let jsonStr = UserDefaults.standard.string(forKey: WIDGET_DATA_KEY),
+       let data = jsonStr.data(using: .utf8),
        let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
         return payload
     }
