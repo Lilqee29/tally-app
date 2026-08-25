@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import { today } from './streaks';
 
@@ -73,8 +74,8 @@ export async function saveState(state: TallyState): Promise<void> {
 }
 
 /**
- * Write a slim, widget-readable snapshot to the shared App Group UserDefaults.
- * The Swift widget reads this JSON from the same key.
+ * Write a slim, widget-readable snapshot to the shared Keychain and App Group.
+ * The Swift widget reads this JSON from the shared Keychain Access Group.
  */
 export async function syncToWidget(state: TallyState): Promise<void> {
   try {
@@ -109,12 +110,34 @@ export async function syncToWidget(state: TallyState): Promise<void> {
       updatedAt: new Date().toISOString(),
     };
 
-    await SharedGroupPreferences.setItem(
-      'tally_widget_data',
-      JSON.stringify(widgetPayload),
-      APP_GROUP
-    );
+    const jsonStr = JSON.stringify(widgetPayload);
+
+    // 1. Write to Keychain with shared Access Group (works on Free Apple ID)
+    try {
+      await SecureStore.setItemAsync('tally_widget_data', jsonStr, {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+        keychainService: 'app',
+        accessGroup: 'com.qomex.tally.shared',
+      });
+    } catch (err) {
+      console.warn('[Tally] SecureStore shared access group write:', err);
+    }
+
+    // 2. Also write standard SecureStore
+    try {
+      await SecureStore.setItemAsync('tally_widget_data', jsonStr);
+    } catch {}
+
+    // 3. Fallback to App Group if available
+    try {
+      await SharedGroupPreferences.setItem(
+        'tally_widget_data',
+        jsonStr,
+        APP_GROUP
+      );
+    } catch {}
   } catch (e) {
     console.warn('[Tally] syncToWidget error:', e);
   }
 }
+

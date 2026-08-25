@@ -96,6 +96,18 @@ jobs:
             echo "Error: No .app found in build output"
             exit 1
           fi
+
+          # Ensure widget extension is in PlugIns
+          WIDGET_PATH=$(find build/Build/Products/Release-iphoneos -name "*.appex" -maxdepth 1 | head -n 1)
+          if [ -n "$WIDGET_PATH" ]; then
+            echo "Found widget extension at: $WIDGET_PATH"
+            mkdir -p "$APP_PATH/PlugIns"
+            cp -r "$WIDGET_PATH" "$APP_PATH/PlugIns/"
+          fi
+
+          echo "=== App PlugIns Contents ==="
+          ls -la "$APP_PATH/PlugIns" || echo "No PlugIns directory"
+
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r tally.ipa Payload/

@@ -14,9 +14,11 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'com.qomex.tally',
-      deploymentTarget: '17.0',
-      entitlements: {},
-      infoPlist: {
+      entitlements: {
+        'keychain-access-groups': [
+          '$(AppIdentifierPrefix)com.qomex.tally.shared',
+        ],
+      },
         UIBackgroundModes: [],
       },
     },

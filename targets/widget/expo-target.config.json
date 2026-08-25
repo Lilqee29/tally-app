@@ -2,9 +2,11 @@
   "type": "widget",
   "name": "TallyWidget",
   "bundleIdentifier": "com.qomex.tally.widget",
-  "deploymentTarget": "17.0",
-  "entitlements": {},
-  "accentColor": {
+  "entitlements": {
+    "keychain-access-groups": [
+      "$(AppIdentifierPrefix)com.qomex.tally.shared"
+    ]
+  },
     "color": "#0A84FF"
   }
 }
