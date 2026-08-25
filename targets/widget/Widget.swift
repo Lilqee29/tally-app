@@ -12,23 +12,27 @@ let WIDGET_DATA_KEY = "tally_widget_data"
 struct TallyQuestion: Codable, Identifiable, Hashable {
     let id: String
     let title: String
-    let dotColor: String
+    let dotColor: String?
+
+    var safeColor: String {
+        dotColor ?? "#0A84FF"
+    }
 }
 
 struct TallyAnswer: Codable {
     let questionId: String
-    let date: String
-    let value: String   // "yes" | "no"
-    let answeredAt: String
+    let date: String?
+    let value: String?   // "yes" | "no"
+    let answeredAt: String?
 }
 
 struct WidgetPayload: Codable {
-    let questions: [TallyQuestion]
-    let todayAnswers: [TallyAnswer]
-    let weekHistory: [String: [String: String]]  // questionId → date → "yes"|"no"
-    let appearance: String?                      // "auto" | "light" | "dark"
+    let questions: [TallyQuestion]?
+    let todayAnswers: [TallyAnswer]?
+    let weekHistory: [String: [String: String]]?
+    let appearance: String?
     let coloredText: Bool?
-    let updatedAt: String
+    let updatedAt: String?
 }
 
 // ─────────────────────────────────────────────
@@ -44,7 +48,7 @@ struct KeychainHelper {
     ]
 
     static func load() -> Data? {
-        // 1. Try with known Access Groups (Keychain Sharing)
+        // 1. Try known Access Groups with service="app"
         for group in possibleGroups {
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
@@ -62,16 +66,30 @@ struct KeychainHelper {
             }
         }
 
-        // 2. Try generic query
-        let query: [String: Any] = [
+        // 2. Try default shared group with service="app"
+        let defaultQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: service,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item2: CFTypeRef?
+        let status2 = SecItemCopyMatching(defaultQuery as CFDictionary, &item2)
+        if status2 == errSecSuccess, let data = item2 as? Data {
+            return data
+        }
+
+        // 3. Try without service filter
+        let genericQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecSuccess, let data = item as? Data {
+        var item3: CFTypeRef?
+        let status3 = SecItemCopyMatching(genericQuery as CFDictionary, &item3)
+        if status3 == errSecSuccess, let data = item3 as? Data {
             return data
         }
 
@@ -124,12 +142,12 @@ func loadPayload() -> WidgetPayload? {
 }
 
 func makeEntry() -> TallyEntry {
-    if let payload = loadPayload() {
+    if let payload = loadPayload(), let questions = payload.questions, !questions.isEmpty {
         return TallyEntry(
             date: Date(),
-            questions: payload.questions,
-            todayAnswers: payload.todayAnswers,
-            weekHistory: payload.weekHistory
+            questions: questions,
+            todayAnswers: payload.todayAnswers ?? [],
+            weekHistory: payload.weekHistory ?? [:]
         )
     }
     return TallyEntry(
@@ -384,7 +402,7 @@ struct MultiTaskWidgetView: View {
 
                             // Color Dot indicator
                             Circle()
-                                .fill(Color(hex: question.dotColor))
+                                .fill(Color(hex: question.safeColor))
                                 .frame(width: 10, height: 10)
 
                             // YES / NO state badge

@@ -56,6 +56,7 @@ export const useStore = create<TallyStore>((set, get) => ({
     const saved = await loadState();
     set({ ...saved, isLoaded: true });
     dotColorIndex = saved.questions.length; // continue color rotation
+    await syncToWidget(saved);
   },
 
   // ── Questions ─────────────────────────────────────────────
