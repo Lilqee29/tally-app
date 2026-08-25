@@ -86,7 +86,6 @@ jobs:
             STRIP_INSTALLED_PRODUCT=NO \
             STRIP_SWIFT_SYMBOLS=NO \
             DEPLOYMENT_POSTPROCESSING=NO \
-            OTHER_LDFLAGS="-Wl,-segalign,0x4000" \
             2>&1 | tee xcodebuild.log | xcbeautify || {
               echo "=== BUILD FAILED - FULL ERROR DETAILS ==="
               grep -A 30 -E "error:|fatal error:|BUILD FAILED" xcodebuild.log || tail -n 100 xcodebuild.log
