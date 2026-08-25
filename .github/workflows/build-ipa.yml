@@ -61,18 +61,19 @@ jobs:
             -skipPackagePluginValidation \
             -skipMacroValidation
 
-      - name: Build unsigned IPA with Widget
+      - name: Build unsigned IPA with Widget (Archive)
         run: |
           set -o pipefail
           WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
           echo "Using workspace: $WORKSPACE"
           
-          xcodebuild \
+          xcodebuild archive \
             -workspace "$WORKSPACE" \
             -scheme Tally \
             -configuration Release \
+            -archivePath build/Tally.xcarchive \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -derivedDataPath build/DerivedData \
             -clonedSourcePackagesDirPath build/SourcePackages \
             -skipPackagePluginValidation \
             -skipMacroValidation \
@@ -82,7 +83,7 @@ jobs:
             DEVELOPMENT_TEAM="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            build 2>&1 | tee xcodebuild.log | xcbeautify || {
+            2>&1 | tee xcodebuild.log | xcbeautify || {
               echo "=== BUILD FAILED - FULL ERROR DETAILS ==="
               grep -A 30 -E "error:|fatal error:|BUILD FAILED" xcodebuild.log || tail -n 100 xcodebuild.log
               exit 1
@@ -90,19 +91,16 @@ jobs:
 
       - name: Package IPA
         run: |
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
-          echo "Found app at: $APP_PATH"
+          APP_PATH=$(find build/Tally.xcarchive/Products/Applications -name "*.app" -maxdepth 1 | head -n 1)
+          echo "Found app in archive at: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            # Fallback to DerivedData if archive path differs
+            APP_PATH=$(find build -name "*.app" | head -n 1)
+            echo "Fallback app path: $APP_PATH"
+          fi
           if [ -z "$APP_PATH" ]; then
             echo "Error: No .app found in build output"
             exit 1
-          fi
-
-          # Ensure widget extension is in PlugIns
-          WIDGET_PATH=$(find build/Build/Products/Release-iphoneos -name "*.appex" -maxdepth 1 | head -n 1)
-          if [ -n "$WIDGET_PATH" ]; then
-            echo "Found widget extension at: $WIDGET_PATH"
-            mkdir -p "$APP_PATH/PlugIns"
-            cp -r "$WIDGET_PATH" "$APP_PATH/PlugIns/"
           fi
 
           echo "=== App PlugIns Contents ==="
@@ -111,7 +109,7 @@ jobs:
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r tally.ipa Payload/
-          echo "IPA packaged successfully with widget included"
+          echo "IPA packaged successfully from archive"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

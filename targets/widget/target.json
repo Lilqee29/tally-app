@@ -4,7 +4,9 @@
   "bundleIdentifier": "com.qomex.tally.widget",
   "deploymentTarget": "17.0",
   "entitlements": {
-    "com.apple.security.application-groups": ["group.com.qomex.tally"]
+    "keychain-access-groups": [
+      "$(AppIdentifierPrefix)com.qomex.tally.shared"
+    ]
   },
   "accentColor": {
     "color": "#0A84FF"
