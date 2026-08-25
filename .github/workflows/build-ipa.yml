@@ -28,6 +28,8 @@ jobs:
 
       - name: Expo Prebuild (iOS, clean)
         run: npx expo prebuild --platform ios --clean
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Build unsigned IPA
         run: |
