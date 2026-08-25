@@ -5,6 +5,20 @@ interface PasteboardBridgeModule {
   readSharedString(): Promise<string | null>;
 }
 
-const PasteboardBridge = requireNativeModule<PasteboardBridgeModule>('PasteboardBridge');
+let PasteboardBridge: PasteboardBridgeModule | null = null;
 
-export default PasteboardBridge;
+try {
+  PasteboardBridge = requireNativeModule<PasteboardBridgeModule>('PasteboardBridge');
+} catch {
+  // Module not available (e.g. during dev or before prebuild) — degrade gracefully
+}
+
+export function writeSharedString(value: string): Promise<boolean> {
+  if (!PasteboardBridge) return Promise.resolve(false);
+  return PasteboardBridge.writeSharedString(value);
+}
+
+export function readSharedString(): Promise<string | null> {
+  if (!PasteboardBridge) return Promise.resolve(null);
+  return PasteboardBridge.readSharedString();
+}

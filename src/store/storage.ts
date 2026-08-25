@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
-import PasteboardBridge from '../../modules/pasteboard-bridge';
+import { writeSharedString } from '../../modules/pasteboard-bridge';
 import { today } from './streaks';
 
 const APP_GROUP = 'group.com.qomex.tally';
@@ -170,7 +170,7 @@ export async function syncToWidget(state: TallyState): Promise<void> {
 
     // 6. Named UIPasteboard — shared purely by Team ID, no entitlement required
     try {
-      const ok = await PasteboardBridge.writeSharedString(jsonStr);
+      const ok = await writeSharedString(jsonStr);
       console.log('[Tally] pasteboard write result:', ok);
     } catch (err) {
       console.warn('[Tally] pasteboard write failed:', err);
