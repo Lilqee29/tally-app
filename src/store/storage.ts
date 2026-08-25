@@ -135,9 +135,28 @@ export async function syncToWidget(state: TallyState): Promise<void> {
       console.warn('[Tally] SharedGroupPreferences string write failed:', err);
     }
 
-    // 3. Backup: standard SecureStore
+    // 3. Keychain with shared accessGroup
     try {
-      await SecureStore.setItemAsync('tally_widget_data', jsonStr);
+      await SecureStore.setItemAsync('tally_widget_data', jsonStr, {
+        keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
+        keychainService: 'app',
+        accessGroup: 'com.qomex.tally.shared',
+      });
+    } catch {}
+
+    // 4. Keychain with service 'app'
+    try {
+      await SecureStore.setItemAsync('tally_widget_data', jsonStr, {
+        keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
+        keychainService: 'app',
+      });
+    } catch {}
+
+    // 5. Standard Keychain
+    try {
+      await SecureStore.setItemAsync('tally_widget_data', jsonStr, {
+        keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
+      });
     } catch {}
 
   } catch (e) {

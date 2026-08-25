@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import Security
 
 // ─────────────────────────────────────────────
 // MARK: - Shared Data Structures
@@ -35,6 +36,50 @@ struct WidgetPayload: Codable {
 }
 
 // ─────────────────────────────────────────────
+// MARK: - Keychain Helper (Shared Keychain)
+// ─────────────────────────────────────────────
+
+struct KeychainHelper {
+    static let key = "tally_widget_data"
+    static let possibleGroups = [
+        "7622586DZY.com.qomex.tally.shared",
+        "com.qomex.tally.shared"
+    ]
+
+    static func load() -> Data? {
+        // 1. Try known Access Groups with service="app"
+        for group in possibleGroups {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecAttrService as String: "app",
+                kSecAttrAccessGroup as String: group,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne
+            ]
+            var item: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+                return data
+            }
+        }
+
+        // 2. Try default generic query
+        let defaultQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item2: CFTypeRef?
+        if SecItemCopyMatching(defaultQuery as CFDictionary, &item2) == errSecSuccess, let data = item2 as? Data {
+            return data
+        }
+
+        return nil
+    }
+}
+
+// ─────────────────────────────────────────────
 // MARK: - Timeline Entry
 // ─────────────────────────────────────────────
 
@@ -50,7 +95,7 @@ enum DotState {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Data Loader (App Group UserDefaults)
+// MARK: - Data Loader (Multi-Channel)
 // ─────────────────────────────────────────────
 
 func loadPayloadFromSuite(_ suite: UserDefaults) -> WidgetPayload? {
@@ -80,7 +125,13 @@ func loadPayloadFromSuite(_ suite: UserDefaults) -> WidgetPayload? {
 }
 
 func loadPayload() -> WidgetPayload? {
-    // 1. Read from shared App Group File container
+    // 1. Read from shared Keychain
+    if let data = KeychainHelper.load(),
+       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+        return payload
+    }
+
+    // 2. Read from shared App Group File container
     if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP) {
         let fileURL = containerURL.appendingPathComponent("tally_widget_data.json")
         if let data = try? Data(contentsOf: fileURL),
@@ -89,13 +140,13 @@ func loadPayload() -> WidgetPayload? {
         }
     }
 
-    // 2. Read from shared App Group UserDefaults
+    // 3. Read from shared App Group UserDefaults
     if let suite = UserDefaults(suiteName: APP_GROUP),
        let payload = loadPayloadFromSuite(suite) {
         return payload
     }
 
-    // 3. Fallback: Standard UserDefaults
+    // 4. Fallback: Standard UserDefaults
     return loadPayloadFromSuite(UserDefaults.standard)
 }
 
