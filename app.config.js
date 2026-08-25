@@ -21,7 +21,7 @@ module.exports = {
         ],
       },
       infoPlist: {
-        UIBackgroundModes: [],
+        UIBackgroundModes: ['fetch'],
       },
     },
     plugins: [

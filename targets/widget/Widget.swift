@@ -3,7 +3,7 @@ import SwiftUI
 import Security
 
 // ─────────────────────────────────────────────
-// MARK: - Shared data structures
+// MARK: - Shared Data Structures
 // ─────────────────────────────────────────────
 
 let APP_GROUP = "group.com.qomex.tally"
@@ -75,210 +75,7 @@ enum DotState {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Timeline Provider (StaticConfiguration)
-// ─────────────────────────────────────────────
-
-struct TallyProvider: TimelineProvider {
-    typealias Entry = TallyEntry
-
-    func placeholder(in context: Context) -> TallyEntry {
-        TallyEntry(
-            date: Date(),
-            questions: [
-                TallyQuestion(id: "1", title: "Exercise daily", dotColor: "#0A84FF"),
-                TallyQuestion(id: "2", title: "Read 20 mins", dotColor: "#30D158")
-            ],
-            todayAnswers: [],
-            weekHistory: [:],
-            appearance: "auto",
-            coloredText: true
-        )
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (TallyEntry) -> Void) {
-        completion(makeEntry())
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<TallyEntry>) -> Void) {
-        let entry = makeEntry()
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
-        completion(timeline)
-    }
-
-    private func makeEntry() -> TallyEntry {
-        guard let payload = loadPayload() else {
-            return TallyEntry(
-                date: Date(),
-                questions: [],
-                todayAnswers: [],
-                weekHistory: [:],
-                appearance: "auto",
-                coloredText: true
-            )
-        }
-        return TallyEntry(
-            date: Date(),
-            questions: payload.questions,
-            todayAnswers: payload.todayAnswers,
-            weekHistory: payload.weekHistory,
-            appearance: payload.appearance ?? "auto",
-            coloredText: payload.coloredText ?? true
-        )
-    }
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Widget Views
-// ─────────────────────────────────────────────
-
-struct TallyWidgetView: View {
-    var entry: TallyEntry
-    @Environment(\.colorScheme) var systemColorScheme
-
-    var isDark: Bool {
-        switch entry.appearance {
-        case "light": return false
-        case "dark": return true
-        default: return systemColorScheme == .dark
-        }
-    }
-
-    var bgColor: Color {
-        isDark ? Color(hex: "#1C1C1E") : Color(hex: "#FFFFFF")
-    }
-
-    var textColor: Color {
-        isDark ? Color(hex: "#FFFFFF") : Color(hex: "#000000")
-    }
-
-    var subtextColor: Color {
-        isDark ? Color(hex: "#8E8E93") : Color(hex: "#636366")
-    }
-
-    var body: some View {
-        if !entry.questions.isEmpty {
-            ZStack {
-                bgColor
-                VStack(alignment: .leading, spacing: 8) {
-                    // Show up to 3 tasks
-                    ForEach(Array(entry.questions.prefix(3))) { q in
-                        taskRow(question: q)
-                    }
-                }
-                .padding(14)
-            }
-        } else {
-            ZStack {
-                bgColor
-                VStack(spacing: 6) {
-                    Text("Tally")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(textColor)
-                    Text("Open app to view your tasks")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(subtextColor)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(16)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func taskRow(question: TallyQuestion) -> some View {
-        let today = isoToday()
-        let ans = entry.todayAnswers.first { $0.questionId == question.id && $0.date == today }
-        let isDone = ans?.value == "yes"
-        let isMissed = ans?.value == "no"
-        let dots = buildWeekDots(questionId: question.id, weekHistory: entry.weekHistory)
-
-        HStack(alignment: .center, spacing: 8) {
-            // Check indicator
-            Circle()
-                .fill(isDone ? Color(hex: "#30D158") : (isMissed ? Color(hex: "#FF3B30") : Color.gray.opacity(0.3)))
-                .frame(width: 14, height: 14)
-                .overlay(
-                    Group {
-                        if isDone {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.white)
-                        } else if isMissed {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                )
-
-            // Task title
-            Text(question.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(textColor)
-                .lineLimit(1)
-
-            Spacer()
-
-            // Weekly mini heatmap dots
-            DotRowView(dots: dots, dotColor: Color(hex: question.dotColor), isDark: isDark)
-        }
-    }
-}
-
-struct DotRowView: View {
-    let dots: [DotState]
-    let dotColor: Color
-    let isDark: Bool
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<dots.count, id: \.self) { i in
-                Circle()
-                    .fill(dotFill(dots[i]))
-                    .frame(width: 5, height: 5)
-            }
-        }
-    }
-
-    private func dotFill(_ state: DotState) -> Color {
-        switch state {
-        case .yes: return dotColor
-        case .no: return isDark ? Color(hex: "#2C2C2E") : Color(hex: "#E5E5EA")
-        case .unanswered: return isDark ? Color(hex: "#2C2C2E").opacity(0.5) : Color(hex: "#E5E5EA").opacity(0.6)
-        }
-    }
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Widget Declaration (StaticConfiguration)
-// ─────────────────────────────────────────────
-
-@main
-struct TallyWidget: Widget {
-    let kind: String = "TallyWidget"
-
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
-            TallyWidgetView(entry: entry)
-                .containerBackground(for: .widget) {
-                    if entry.appearance == "light" {
-                        Color(hex: "#FFFFFF")
-                    } else if entry.appearance == "dark" {
-                        Color(hex: "#1C1C1E")
-                    } else {
-                        Color(hex: "#1C1C1E")
-                    }
-                }
-        }
-        .configurationDisplayName("Tally Tasks")
-        .description("View your daily habits and streak heatmaps.")
-        .supportedFamilies([.systemSmall, .systemMedium])
-    }
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Data Loaders
+// MARK: - Data Loader
 // ─────────────────────────────────────────────
 
 func loadPayload() -> WidgetPayload? {
@@ -306,36 +103,325 @@ func loadPayload() -> WidgetPayload? {
     return nil
 }
 
-func isoToday() -> String {
+func makeEntry() -> TallyEntry {
+    if let payload = loadPayload() {
+        return TallyEntry(
+            date: Date(),
+            questions: payload.questions,
+            todayAnswers: payload.todayAnswers,
+            weekHistory: payload.weekHistory,
+            appearance: payload.appearance ?? "auto",
+            coloredText: payload.coloredText ?? true
+        )
+    }
+    return TallyEntry(
+        date: Date(),
+        questions: [],
+        todayAnswers: [],
+        weekHistory: [:],
+        appearance: "auto",
+        coloredText: true
+    )
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Timeline Provider
+// ─────────────────────────────────────────────
+
+struct TallyProvider: TimelineProvider {
+    typealias Entry = TallyEntry
+
+    func placeholder(in context: Context) -> TallyEntry {
+        TallyEntry(
+            date: Date(),
+            questions: [
+                TallyQuestion(id: "1", title: "Did I go for a run?", dotColor: "#0A84FF"),
+                TallyQuestion(id: "2", title: "Did I lock the door?", dotColor: "#FFD60A"),
+                TallyQuestion(id: "3", title: "Did I water the plants?", dotColor: "#30D158")
+            ],
+            todayAnswers: [
+                TallyAnswer(questionId: "1", date: todayString(), value: "no", answeredAt: "2026-08-25T18:07:00Z"),
+                TallyAnswer(questionId: "2", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z"),
+                TallyAnswer(questionId: "3", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z")
+            ],
+            weekHistory: [:],
+            appearance: "auto",
+            coloredText: true
+        )
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TallyEntry) -> Void) {
+        if context.isPreview && loadPayload() == nil {
+            completion(placeholder(in: context))
+        } else {
+            completion(makeEntry())
+        }
+    }
+
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
+        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Formatters & Utilities
+// ─────────────────────────────────────────────
+
+func todayString() -> String {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"
     return f.string(from: Date())
 }
 
-func buildWeekDots(questionId: String, weekHistory: [String: [String: String]]) -> [DotState] {
-    let history = weekHistory[questionId] ?? [:]
-    return (0..<7).map { offset in
-        let d = Calendar.current.date(byAdding: .day, value: -(6 - offset), to: Date())!
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        let key = f.string(from: d)
-        switch history[key] {
-        case "yes": return .yes
-        case "no": return .no
-        default: return .unanswered
+func formatTimestamp(_ isoString: String) -> String {
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    var d = iso.date(from: isoString)
+    if d == nil {
+        iso.formatOptions = [.withInternetDateTime]
+        d = iso.date(from: isoString)
+    }
+    guard let date = d else { return "" }
+    let out = DateFormatter()
+    out.dateFormat = "EEE d, HH:mm"
+    return out.string(from: date)
+}
+
+extension Color {
+    init(hex: String) {
+        let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: clean).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch clean.count {
+        case 3:
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6:
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8:
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 128, 128, 128)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Empty State View (img4)
+// ─────────────────────────────────────────────
+
+struct EmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "hand.tap.fill")
+                .font(.system(size: 28))
+                .foregroundColor(Color(hex: "#8E8E93"))
+            
+            Text("Touch and hold to edit widget and select task.")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color(hex: "#8E8E93"))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
         }
     }
 }
 
-// MARK: - Color extension
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r = Double((int >> 16) & 0xFF) / 255
-        let g = Double((int >> 8) & 0xFF) / 255
-        let b = Double(int & 0xFF) / 255
-        self.init(red: r, green: g, blue: b)
+// ─────────────────────────────────────────────
+// MARK: - Single Task Widget View (img1 & img5)
+// ─────────────────────────────────────────────
+
+struct SingleTaskWidgetView: View {
+    let entry: TallyEntry
+    @Environment(\.widgetFamily) var family
+
+    var body: some View {
+        if entry.questions.isEmpty {
+            EmptyStateView()
+        } else {
+            let question = entry.questions.first!
+            let todayStr = todayString()
+            let ans = entry.todayAnswers.first { $0.questionId == question.id && $0.date == todayStr }
+            let isYes = ans?.value == "yes"
+            let isNo = ans?.value == "no"
+
+            if family == .systemSmall {
+                // Small square single task widget (img5)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(question.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    Spacer()
+                    
+                    if isYes {
+                        Text("YES")
+                            .font(.system(size: 36, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#0A84FF"))
+                    } else if isNo {
+                        Text("NO")
+                            .font(.system(size: 36, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#FF3B30"))
+                    } else {
+                        Text("NO")
+                            .font(.system(size: 36, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
+                    }
+                }
+                .padding(4)
+            } else {
+                // Medium single task widget (image1.jpg)
+                HStack(alignment: .center) {
+                    Text(question.title)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                    
+                    Spacer()
+                    
+                    if isYes {
+                        Text("YES")
+                            .font(.system(size: 42, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#0A84FF"))
+                    } else if isNo {
+                        Text("NO")
+                            .font(.system(size: 42, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#FF3B30"))
+                    } else {
+                        Text("NO")
+                            .font(.system(size: 42, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Multi-Task Widget View (img6)
+// ─────────────────────────────────────────────
+
+struct MultiTaskWidgetView: View {
+    let entry: TallyEntry
+
+    var body: some View {
+        if entry.questions.isEmpty {
+            EmptyStateView()
+        } else {
+            let displayedQuestions = Array(entry.questions.prefix(3))
+            let todayStr = todayString()
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(displayedQuestions) { question in
+                    let ans = entry.todayAnswers.first { $0.questionId == question.id && $0.date == todayStr }
+                    let isYes = ans?.value == "yes"
+                    let isNo = ans?.value == "no"
+
+                    HStack(alignment: .center, spacing: 8) {
+                        // Title + timestamp subtitle
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(question.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            
+                            if let answeredAt = ans?.answeredAt, isYes {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 9))
+                                    Text(formatTimestamp(answeredAt))
+                                        .font(.system(size: 11))
+                                }
+                                .foregroundColor(Color(hex: "#8E8E93"))
+                            }
+                        }
+
+                        Spacer()
+
+                        // Color Dot indicator
+                        Circle()
+                            .fill(Color(hex: question.dotColor))
+                            .frame(width: 10, height: 10)
+
+                        // YES / NO state badge
+                        if isYes {
+                            Text("YES")
+                                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                .foregroundColor(Color(hex: "#0A84FF"))
+                                .frame(width: 48, alignment: .trailing)
+                        } else if isNo {
+                            Text("NO")
+                                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                .foregroundColor(Color(hex: "#FF3B30"))
+                                .frame(width: 48, alignment: .trailing)
+                        } else {
+                            Text("NO")
+                                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
+                                .frame(width: 48, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Widget Definitions
+// ─────────────────────────────────────────────
+
+struct SingleTaskWidget: Widget {
+    let kind: String = "SingleTaskWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
+            SingleTaskWidgetView(entry: entry)
+                .containerBackground(for: .widget) {
+                    Color(hex: "#1C1C1E")
+                }
+        }
+        .configurationDisplayName("Task")
+        .description("Tracks one task")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+struct MultiTasksWidget: Widget {
+    let kind: String = "MultiTasksWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
+            MultiTaskWidgetView(entry: entry)
+                .containerBackground(for: .widget) {
+                    Color(hex: "#1C1C1E")
+                }
+        }
+        .configurationDisplayName("Tasks")
+        .description("Tracks up to 3 tasks")
+        .supportedFamilies([.systemMedium, .systemLarge])
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Widget Bundle
+// ─────────────────────────────────────────────
+
+@main
+struct TallyWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        SingleTaskWidget()
+        MultiTasksWidget()
     }
 }
