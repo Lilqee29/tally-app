@@ -1,6 +1,5 @@
 import WidgetKit
 import SwiftUI
-import Security
 
 // ─────────────────────────────────────────────
 // MARK: - Shared Data Structures
@@ -36,68 +35,6 @@ struct WidgetPayload: Codable {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Keychain Helper (Shared Access Groups)
-// ─────────────────────────────────────────────
-
-struct KeychainHelper {
-    static let key = "tally_widget_data"
-    static let service = "app"
-    static let possibleGroups = [
-        "7622586DZY.com.qomex.tally.shared",
-        "com.qomex.tally.shared"
-    ]
-
-    static func load() -> Data? {
-        // 1. Try known Access Groups with service="app"
-        for group in possibleGroups {
-            let query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrAccount as String: key,
-                kSecAttrService as String: service,
-                kSecAttrAccessGroup as String: group,
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne
-            ]
-            
-            var item: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &item)
-            if status == errSecSuccess, let data = item as? Data {
-                return data
-            }
-        }
-
-        // 2. Try default shared group with service="app"
-        let defaultQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecAttrService as String: service,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item2: CFTypeRef?
-        let status2 = SecItemCopyMatching(defaultQuery as CFDictionary, &item2)
-        if status2 == errSecSuccess, let data = item2 as? Data {
-            return data
-        }
-
-        // 3. Try without service filter
-        let genericQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item3: CFTypeRef?
-        let status3 = SecItemCopyMatching(genericQuery as CFDictionary, &item3)
-        if status3 == errSecSuccess, let data = item3 as? Data {
-            return data
-        }
-
-        return nil
-    }
-}
-
-// ─────────────────────────────────────────────
 // MARK: - Timeline Entry
 // ─────────────────────────────────────────────
 
@@ -113,27 +50,22 @@ enum DotState {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Data Loader
+// MARK: - Data Loader (App Group UserDefaults)
 // ─────────────────────────────────────────────
 
 func loadPayload() -> WidgetPayload? {
-    // 1. Shared Keychain
-    if let data = KeychainHelper.load(),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-        return payload
-    }
+    // Read from shared App Group UserDefaults written by react-native-shared-group-preferences
+    guard let suite = UserDefaults(suiteName: APP_GROUP) else { return nil }
 
-    // 2. Shared App Group
-    if let suite = UserDefaults(suiteName: APP_GROUP),
-       let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
+    // react-native-shared-group-preferences stores value as a raw string
+    if let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
        let data = jsonStr.data(using: .utf8),
        let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
         return payload
     }
 
-    // 3. Standard UserDefaults
-    if let jsonStr = UserDefaults.standard.string(forKey: WIDGET_DATA_KEY),
-       let data = jsonStr.data(using: .utf8),
+    // Also try if stored as raw Data
+    if let data = suite.data(forKey: WIDGET_DATA_KEY),
        let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
         return payload
     }
@@ -157,6 +89,7 @@ func makeEntry() -> TallyEntry {
         weekHistory: [:]
     )
 }
+
 
 // ─────────────────────────────────────────────
 // MARK: - Timeline Provider (StaticConfiguration)

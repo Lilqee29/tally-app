@@ -11,7 +11,7 @@ export interface Question {
   title: string;
   createdAt: string;
   order: number;
-  dotColor: string; // hex color for heatmap dots, user-configurable
+  dotColor: string;
 }
 
 export interface Answer {
@@ -74,8 +74,10 @@ export async function saveState(state: TallyState): Promise<void> {
 }
 
 /**
- * Write a slim, widget-readable snapshot to the shared Keychain and App Group.
- * The Swift widget reads this JSON from the shared Keychain Access Group.
+ * Write a slim, widget-readable snapshot to the shared App Group UserDefaults.
+ * The Swift widget reads this via UserDefaults(suiteName: "group.com.qomex.tally").
+ * Both the main app and widget extension must have "com.apple.security.application-groups"
+ * entitlement with "group.com.qomex.tally" for this to work.
  */
 export async function syncToWidget(state: TallyState): Promise<void> {
   try {
@@ -83,7 +85,6 @@ export async function syncToWidget(state: TallyState): Promise<void> {
     const todayAnswers = state.answers.filter((a) => a.date === todayStr);
 
     const weekHistory: Record<string, Record<string, 'yes' | 'no'>> = {};
-    // Build last-7-days history per question
     for (const q of state.questions) {
       weekHistory[q.id] = {};
       for (let i = 0; i < 7; i++) {
@@ -112,32 +113,23 @@ export async function syncToWidget(state: TallyState): Promise<void> {
 
     const jsonStr = JSON.stringify(widgetPayload);
 
-    // 1. Write to Keychain with shared Access Group (works on Free Apple ID)
-    try {
-      await SecureStore.setItemAsync('tally_widget_data', jsonStr, {
-        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
-        keychainService: 'app',
-        accessGroup: 'com.qomex.tally.shared',
-      });
-    } catch (err) {
-      console.warn('[Tally] SecureStore shared access group write:', err);
-    }
-
-    // 2. Also write standard SecureStore
-    try {
-      await SecureStore.setItemAsync('tally_widget_data', jsonStr);
-    } catch {}
-
-    // 3. Fallback to App Group if available
+    // Primary: App Group UserDefaults (shared between main app + widget extension)
     try {
       await SharedGroupPreferences.setItem(
         'tally_widget_data',
         jsonStr,
         APP_GROUP
       );
+    } catch (err) {
+      console.warn('[Tally] SharedGroupPreferences write failed:', err);
+    }
+
+    // Backup: standard SecureStore
+    try {
+      await SecureStore.setItemAsync('tally_widget_data', jsonStr);
     } catch {}
+
   } catch (e) {
     console.warn('[Tally] syncToWidget error:', e);
   }
 }
-

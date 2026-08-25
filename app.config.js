@@ -20,6 +20,9 @@ module.exports = {
         'keychain-access-groups': [
           '$(AppIdentifierPrefix)com.qomex.tally.shared',
         ],
+        'com.apple.security.application-groups': [
+          'group.com.qomex.tally',
+        ],
       },
       infoPlist: {
         UIBackgroundModes: ['fetch'],
