@@ -14,7 +14,7 @@ struct TallyQuestion: Codable, Identifiable, Hashable, AppEntity {
     let title: String
     let dotColor: String
 
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Task"
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Task")
     static var defaultQuery = TallyQuestionQuery()
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(title)")
@@ -70,6 +70,8 @@ struct TallyWidgetIntent: WidgetConfigurationIntent {
 
     @Parameter(title: "Show Week History", default: true)
     var showWeekHistory: Bool
+
+    init() {}
 }
 
 // ─────────────────────────────────────────────
@@ -80,8 +82,18 @@ struct MarkAnswerIntent: AppIntent {
     static var title: LocalizedStringResource = "Mark Answer"
     static var isDiscoverable: Bool = false
 
-    @Parameter(title: "Question ID") var questionId: String
-    @Parameter(title: "Value") var value: String  // "yes" | "no"
+    @Parameter(title: "Question ID")
+    var questionId: String
+
+    @Parameter(title: "Value")
+    var value: String  // "yes" | "no"
+
+    init() {}
+
+    init(questionId: String, value: String) {
+        self.questionId = questionId
+        self.value = value
+    }
 
     func perform() async throws -> some IntentResult {
         guard var payload = loadPayload() else { return .result() }
@@ -95,7 +107,6 @@ struct MarkAnswerIntent: AppIntent {
             answeredAt: ISO8601DateFormatter().string(from: Date())
         ))
 
-        // Re-build and save minimal updated payload
         let updated = WidgetPayload(
             questions: payload.questions,
             todayAnswers: newAnswers,
@@ -116,7 +127,7 @@ struct TallyEntry: TimelineEntry {
     let date: Date
     let question: TallyQuestion?
     let todayAnswer: TallyAnswer?
-    let weekDots: [DotState]  // 7 elements, Mon→Sun
+    let weekDots: [DotState]
     let showWeekHistory: Bool
 }
 
@@ -142,7 +153,6 @@ struct TallyProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: TallyWidgetIntent, in context: Context) async -> Timeline<TallyEntry> {
         let entry = makeEntry(for: configuration.firstTask, configuration: configuration)
-        // Refresh at start of next day
         let nextDay = Calendar.current.startOfDay(for: Date().addingTimeInterval(86400))
         return Timeline(entries: [entry], policy: .after(nextDay))
     }
@@ -334,14 +344,5 @@ extension Color {
         let g = Double((int >> 8) & 0xFF) / 255
         let b = Double(int & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
-    }
-}
-
-// MARK: - MarkAnswerIntent convenience init
-extension MarkAnswerIntent {
-    init(questionId: String, value: String) {
-        self.init()
-        self.questionId = questionId
-        self.value = value
     }
 }
