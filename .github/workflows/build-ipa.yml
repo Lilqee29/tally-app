@@ -61,7 +61,6 @@ jobs:
             -scheme Tally \
             -configuration Release \
             -sdk iphoneos \
-            -destination "generic/platform=iOS" \
             -derivedDataPath build \
             -clonedSourcePackagesDirPath build/SourcePackages \
             -skipPackagePluginValidation \
