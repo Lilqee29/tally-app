@@ -26,44 +26,27 @@ jobs:
       - name: Install xcbeautify
         run: brew install xcbeautify || true
 
-      - name: Configure Git for SPM HTTPS
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git config --global url."https://".insteadOf "git://"
-          mkdir -p ~/.ssh
-          touch ~/.netrc
-          echo "machine github.com login oauth2 password ${{ secrets.GITHUB_TOKEN }}" >> ~/.netrc
-          echo "machine api.github.com login oauth2 password ${{ secrets.GITHUB_TOKEN }}" >> ~/.netrc
-
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
       - name: Expo Prebuild (iOS, clean)
-        run: npx expo prebuild --platform ios --clean
-
-      - name: Resolve Swift Package Dependencies
         run: |
-          xcodebuild \
-            -resolvePackageDependencies \
-            -workspace ios/Tally.xcworkspace \
-            -scheme Tally \
-            -derivedDataPath build \
-            -clonedSourcePackagesDirPath build/SourcePackages \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            -scmProvider system || true
+          npx expo prebuild --platform ios --clean
+          ls -la ios/
 
       - name: Build unsigned IPA with Widget
         run: |
           set -o pipefail
+          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          echo "Using workspace: $WORKSPACE"
+          
           xcodebuild \
-            -workspace ios/Tally.xcworkspace \
+            -workspace "$WORKSPACE" \
             -scheme Tally \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath build \
-            -clonedSourcePackagesDirPath build/SourcePackages \
             -skipPackagePluginValidation \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO \
@@ -72,7 +55,11 @@ jobs:
             DEVELOPMENT_TEAM="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            build 2>&1 | xcbeautify
+            build 2>&1 | tee xcodebuild.log | xcbeautify || {
+              echo "=== BUILD FAILED - RAW ERRORS ==="
+              grep -E "error:|fatal error:|BUILD FAILED" xcodebuild.log || tail -n 50 xcodebuild.log
+              exit 1
+            }
 
       - name: Package IPA
         run: |
