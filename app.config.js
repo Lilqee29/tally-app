@@ -14,7 +14,7 @@ module.exports = {
     },
     ios: {
       supportsTablet: false,
-      bundleIdentifier: 'com.qomex.tally',
+      bundleIdentifier: 'com.qomex.tally2',   // was com.qomex.tally,
       deploymentTarget: '17.0',
       entitlements: {
         'keychain-access-groups': [

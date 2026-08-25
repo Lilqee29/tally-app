@@ -1,7 +1,7 @@
 {
   "type": "widget",
   "name": "TallyWidget",
-  "bundleIdentifier": "com.qomex.tally.widget",
+  "bundleIdentifier": "com.qomex.tally2.widget",
   "deploymentTarget": "17.0",
   "entitlements": {
     "keychain-access-groups": [
