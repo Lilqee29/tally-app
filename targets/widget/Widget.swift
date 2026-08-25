@@ -33,27 +33,65 @@ struct WidgetPayload: Codable {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Keychain Helper
+// MARK: - Keychain Helper (Shared Access Groups)
 // ─────────────────────────────────────────────
 
 struct KeychainHelper {
     static let key = "tally_widget_data"
     static let service = "app"
+    static let possibleGroups = [
+        "7622586DZY.com.qomex.tally.shared",
+        "com.qomex.tally.shared"
+    ]
 
     static func load() -> Data? {
+        // 1. Try with known Access Groups (Keychain Sharing)
+        for group in possibleGroups {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecAttrService as String: service,
+                kSecAttrAccessGroup as String: group,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne
+            ]
+            
+            var item: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            if status == errSecSuccess, let data = item as? Data {
+                return data
+            }
+        }
+
+        // 2. Try generic query without service filter in access group
+        for group in possibleGroups {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecAttrAccessGroup as String: group,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne
+            ]
+            var item: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            if status == errSecSuccess, let data = item as? Data {
+                return data
+            }
+        }
+
+        // 3. Fallback query
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
-        
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecSuccess, let data = item as? Data {
             return data
         }
+
         return nil
     }
 }
@@ -65,7 +103,7 @@ struct KeychainHelper {
 struct TaskEntity: AppEntity {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Task")
     
-    struct TaskQuery: EntityQuery {
+    struct TaskQuery: EntityQuery, EntityStringQuery {
         func entities(for identifiers: [String]) async throws -> [TaskEntity] {
             let payload = loadPayload()
             let questions = payload?.questions ?? []
@@ -77,7 +115,25 @@ struct TaskEntity: AppEntity {
         func suggestedEntities() async throws -> [TaskEntity] {
             let payload = loadPayload()
             let questions = payload?.questions ?? []
+            if questions.isEmpty {
+                return [
+                    TaskEntity(id: "default_1", title: "Task 1"),
+                    TaskEntity(id: "default_2", title: "Task 2"),
+                    TaskEntity(id: "default_3", title: "Task 3")
+                ]
+            }
             return questions.map { TaskEntity(id: $0.id, title: $0.title) }
+        }
+
+        func entities(matching string: String) async throws -> [TaskEntity] {
+            let payload = loadPayload()
+            let questions = payload?.questions ?? []
+            if string.isEmpty {
+                return try await suggestedEntities()
+            }
+            return questions
+                .filter { $0.title.localizedCaseInsensitiveContains(string) }
+                .map { TaskEntity(id: $0.id, title: $0.title) }
         }
 
         func defaultResult() async -> TaskEntity? {
@@ -85,7 +141,7 @@ struct TaskEntity: AppEntity {
             if let first = payload?.questions.first {
                 return TaskEntity(id: first.id, title: first.title)
             }
-            return nil
+            return TaskEntity(id: "default_1", title: "First Task")
         }
     }
 
