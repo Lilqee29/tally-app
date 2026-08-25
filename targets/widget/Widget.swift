@@ -53,6 +53,32 @@ enum DotState {
 // MARK: - Data Loader (App Group UserDefaults)
 // ─────────────────────────────────────────────
 
+func loadPayloadFromSuite(_ suite: UserDefaults) -> WidgetPayload? {
+    // 1. Read as Dictionary (native NSDictionary written by react-native-shared-group-preferences)
+    if let dict = suite.dictionary(forKey: WIDGET_DATA_KEY),
+       let data = try? JSONSerialization.data(withJSONObject: dict),
+       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+        return payload
+    }
+
+    // 2. Read as JSON String (from tally_widget_data or tally_widget_data_str)
+    for key in [WIDGET_DATA_KEY, "tally_widget_data_str"] {
+        if let jsonStr = suite.string(forKey: key),
+           let data = jsonStr.data(using: .utf8),
+           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+            return payload
+        }
+    }
+
+    // 3. Read as raw Data
+    if let data = suite.data(forKey: WIDGET_DATA_KEY),
+       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+        return payload
+    }
+
+    return nil
+}
+
 func loadPayload() -> WidgetPayload? {
     // 1. Read from shared App Group File container
     if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP) {
@@ -63,28 +89,14 @@ func loadPayload() -> WidgetPayload? {
         }
     }
 
-    // 2. Read from shared App Group UserDefaults (react-native-shared-group-preferences)
-    if let suite = UserDefaults(suiteName: APP_GROUP) {
-        if let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
-           let data = jsonStr.data(using: .utf8),
-           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-            return payload
-        }
-
-        if let data = suite.data(forKey: WIDGET_DATA_KEY),
-           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-            return payload
-        }
-    }
-
-    // 3. Fallback: Standard UserDefaults
-    if let jsonStr = UserDefaults.standard.string(forKey: WIDGET_DATA_KEY),
-       let data = jsonStr.data(using: .utf8),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+    // 2. Read from shared App Group UserDefaults
+    if let suite = UserDefaults(suiteName: APP_GROUP),
+       let payload = loadPayloadFromSuite(suite) {
         return payload
     }
 
-    return nil
+    // 3. Fallback: Standard UserDefaults
+    return loadPayloadFromSuite(UserDefaults.standard)
 }
 
 func makeEntry() -> TallyEntry {

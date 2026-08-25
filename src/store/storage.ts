@@ -113,18 +113,29 @@ export async function syncToWidget(state: TallyState): Promise<void> {
 
     const jsonStr = JSON.stringify(widgetPayload);
 
-    // Primary: App Group UserDefaults (shared between main app + widget extension)
+    // 1. Primary: App Group UserDefaults as Object (native NSDictionary)
     try {
       await SharedGroupPreferences.setItem(
         'tally_widget_data',
+        widgetPayload,
+        APP_GROUP
+      );
+    } catch (err) {
+      console.warn('[Tally] SharedGroupPreferences object write failed:', err);
+    }
+
+    // 2. Secondary: App Group UserDefaults as JSON String
+    try {
+      await SharedGroupPreferences.setItem(
+        'tally_widget_data_str',
         jsonStr,
         APP_GROUP
       );
     } catch (err) {
-      console.warn('[Tally] SharedGroupPreferences write failed:', err);
+      console.warn('[Tally] SharedGroupPreferences string write failed:', err);
     }
 
-    // Backup: standard SecureStore
+    // 3. Backup: standard SecureStore
     try {
       await SecureStore.setItemAsync('tally_widget_data', jsonStr);
     } catch {}
