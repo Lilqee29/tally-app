@@ -16,25 +16,37 @@ interface TaskRowProps {
   question: Question;
   todayAnswer?: Answer;
   isEditMode: boolean;
-  onPress: () => void;   // mark done / navigate to answer
-  onUndo: () => void;    // reset today's answer
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onPress: () => void;      // mark done / navigate to answer
+  onUndo: () => void;       // reset today's answer
   onDelete: () => void;
-  onDragStart?: () => void;
+  onEdit?: () => void;      // edit question title
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
 export function TaskRow({
   question,
   todayAnswer,
   isEditMode,
+  canMoveUp = false,
+  canMoveDown = false,
   onPress,
   onUndo,
   onDelete,
-  onDragStart,
+  onEdit,
+  onMoveUp,
+  onMoveDown,
 }: TaskRowProps) {
   const isDone = todayAnswer?.value === 'yes';
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePress = () => {
+    if (isEditMode) {
+      onEdit?.();
+      return;
+    }
     if (isDone) return; // tapping a done row does nothing (use refresh to undo)
     // Small bounce animation
     Animated.sequence([
@@ -56,42 +68,64 @@ export function TaskRow({
       {/* ── Main row ─────────────────────────────────── */}
       <TouchableOpacity
         onPress={handlePress}
-        activeOpacity={isDone ? 1 : 0.7}
+        activeOpacity={isDone && !isEditMode ? 1 : 0.7}
         style={styles.rowContent}
-        disabled={isEditMode}
       >
         {/* State circle */}
-        <Animated.View style={[{ transform: [{ scale }] }]}>
-          {isDone ? (
-            <View style={styles.circleChecked}>
-              <Ionicons name="checkmark" size={16} color="#fff" />
-            </View>
-          ) : (
-            <View style={styles.circlePending} />
-          )}
-        </Animated.View>
+        {!isEditMode && (
+          <Animated.View style={[{ transform: [{ scale }] }]}>
+            {isDone ? (
+              <View style={styles.circleChecked}>
+                <Ionicons name="checkmark" size={16} color="#fff" />
+              </View>
+            ) : (
+              <View style={styles.circlePending} />
+            )}
+          </Animated.View>
+        )}
 
         {/* Text block */}
         <View style={styles.textBlock}>
-          <Text style={isDone ? typography.rowTitleDone : typography.rowTitle} numberOfLines={2}>
+          <Text
+            style={!isEditMode && isDone ? typography.rowTitleDone : typography.rowTitle}
+            numberOfLines={2}
+          >
             {question.title}
           </Text>
-          {isDone && todayAnswer?.answeredAt && (
+          {!isEditMode && isDone && todayAnswer?.answeredAt && (
             <Text style={typography.timestamp}>
               {formatAnswerTime(todayAnswer.answeredAt)}
             </Text>
+          )}
+          {isEditMode && (
+            <Text style={styles.tapToEditHint}>Tap to edit title</Text>
           )}
         </View>
 
         {/* Trailing controls */}
         <View style={styles.trailing}>
           {isEditMode ? (
-            // Hamburger reorder handle
-            <TouchableOpacity onPressIn={onDragStart} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="menu" size={20} color={colors.text.secondary} />
-            </TouchableOpacity>
+            // Up/Down reorder handles
+            <View style={styles.reorderGroup}>
+              <TouchableOpacity
+                onPress={onMoveUp}
+                disabled={!canMoveUp}
+                style={[styles.reorderBtn, !canMoveUp && { opacity: 0.2 }]}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="chevron-up" size={16} color={colors.text.secondary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onMoveDown}
+                disabled={!canMoveDown}
+                style={[styles.reorderBtn, !canMoveDown && { opacity: 0.2 }]}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="chevron-down" size={16} color={colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
           ) : (
-            // Refresh/undo (always rendered for layout stability, shown dimly when not done)
+            // Refresh/undo
             <TouchableOpacity
               onPress={isDone ? onUndo : undefined}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -114,6 +148,7 @@ const CIRCLE_SIZE = 28;
 const styles = StyleSheet.create({
   rowWrapper: {
     paddingLeft: 24,
+    position: 'relative',
   },
   rowContent: {
     flexDirection: 'row',
@@ -124,17 +159,33 @@ const styles = StyleSheet.create({
   },
   deleteBtn: {
     position: 'absolute',
-    left: -28,
-    top: 18,
+    left: 4,
+    top: 21,
     zIndex: 10,
   },
   textBlock: {
     flex: 1,
     gap: 3,
+    paddingLeft: 0,
+  },
+  tapToEditHint: {
+    fontSize: 12,
+    color: colors.state.yes,
+    fontWeight: '500',
   },
   trailing: {
-    width: 28,
+    minWidth: 28,
     alignItems: 'center',
+  },
+  reorderGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reorderBtn: {
+    padding: 4,
+    backgroundColor: colors.bg.surfaceElevated,
+    borderRadius: 6,
   },
   // Pending: dashed circle
   circlePending: {

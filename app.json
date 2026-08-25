@@ -24,7 +24,7 @@
     },
     "plugins": [
       [
-        "@evanbacon/expo-apple-targets",
+        "@bacons/apple-targets",
         {
           "appleTeamId": "YOUR_TEAM_ID"
         }

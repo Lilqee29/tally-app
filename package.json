@@ -3,12 +3,21 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/vector-icons": "^14.0.2",
+    "@react-native-async-storage/async-storage": "^2.1.0",
+    "date-fns": "^4.1.0",
     "expo": "~57.0.16",
+    "expo-haptics": "~14.0.1",
+    "expo-linear-gradient": "~14.0.2",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.2"
+    "react-native": "0.86.2",
+    "react-native-shared-group-preferences": "^1.1.24",
+    "react-native-svg": "^15.9.0",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@bacons/apple-targets": "^5.0.0",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   },

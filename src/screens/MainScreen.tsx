@@ -8,10 +8,6 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
-import DraggableFlatList, {
-  RenderItemParams,
-  ScaleDecorator,
-} from 'react-native-draggable-flatlist';
 import { useStore } from '../store/useStore';
 import { TopBar } from '../components/TopBar';
 import { TaskRow } from '../components/TaskRow';
@@ -35,11 +31,14 @@ export function MainScreen() {
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<{ id: string; title: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [heatmapQuestionId, setHeatmapQuestionId] = useState<string | null>(null);
 
   // Check if any question has an active streak (for flame FAB gradient)
   const streakActive = questions.some((q) => getStreak(q.id, answers) > 0);
+
+  const sortedQuestions = [...questions].sort((a, b) => a.order - b.order);
 
   const handleDelete = (id: string) => {
     Alert.alert('Delete Question', 'This will also remove all its history. Continue?', [
@@ -52,27 +51,37 @@ export function MainScreen() {
     ]);
   };
 
+  const handleMove = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= sortedQuestions.length) return;
+
+    const list = [...sortedQuestions];
+    const [moved] = list.splice(index, 1);
+    list.splice(targetIndex, 0, moved);
+    reorderQuestions(list);
+  };
+
   const renderItem = useCallback(
-    ({ item, drag, isActive }: RenderItemParams<Question>) => {
+    ({ item, index }: { item: Question; index: number }) => {
       const todayAnswer = getTodayAnswer(item.id);
       return (
-        <ScaleDecorator>
-          <TaskRow
-            question={item}
-            todayAnswer={todayAnswer}
-            isEditMode={isEditMode}
-            onPress={() => markDone(item.id)}
-            onUndo={() => undoAnswer(item.id)}
-            onDelete={() => handleDelete(item.id)}
-            onDragStart={drag}
-          />
-        </ScaleDecorator>
+        <TaskRow
+          question={item}
+          todayAnswer={todayAnswer}
+          isEditMode={isEditMode}
+          canMoveUp={index > 0}
+          canMoveDown={index < sortedQuestions.length - 1}
+          onPress={() => markDone(item.id)}
+          onUndo={() => undoAnswer(item.id)}
+          onDelete={() => handleDelete(item.id)}
+          onEdit={() => setEditingQuestion({ id: item.id, title: item.title })}
+          onMoveUp={() => handleMove(index, 'up')}
+          onMoveDown={() => handleMove(index, 'down')}
+        />
       );
     },
-    [isEditMode, answers]
+    [isEditMode, answers, sortedQuestions]
   );
-
-  const sortedQuestions = [...questions].sort((a, b) => a.order - b.order);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -96,11 +105,10 @@ export function MainScreen() {
         </View>
       ) : (
         // ── Task list ────────────────────────────────
-        <DraggableFlatList
+        <FlatList
           data={sortedQuestions}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          onDragEnd={({ data }) => reorderQuestions(data)}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
@@ -108,7 +116,10 @@ export function MainScreen() {
 
       {/* FABs */}
       <FABs
-        onAdd={() => setShowAdd(true)}
+        onAdd={() => {
+          setEditingQuestion(null);
+          setShowAdd(true);
+        }}
         onFlame={() => {
           // Open heatmap for first question (user can navigate inside)
           if (questions.length > 0) {
@@ -120,8 +131,13 @@ export function MainScreen() {
 
       {/* Sheets */}
       <AddEditSheet
-        visible={showAdd}
-        onClose={() => setShowAdd(false)}
+        visible={showAdd || editingQuestion !== null}
+        editingId={editingQuestion?.id ?? null}
+        initialTitle={editingQuestion?.title ?? ''}
+        onClose={() => {
+          setShowAdd(false);
+          setEditingQuestion(null);
+        }}
       />
       <SettingsSheet
         visible={showSettings}
