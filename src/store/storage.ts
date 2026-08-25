@@ -142,7 +142,10 @@ export async function syncToWidget(state: TallyState): Promise<void> {
         keychainService: 'app',
         accessGroup: 'com.qomex.tally.shared',
       });
-    } catch {}
+      console.log('[Tally] shared keychain write OK');
+    } catch (err) {
+      console.warn('[Tally] shared keychain write FAILED:', err);
+    }
 
     // 4. Keychain with service 'app'
     try {
@@ -150,14 +153,18 @@ export async function syncToWidget(state: TallyState): Promise<void> {
         keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
         keychainService: 'app',
       });
-    } catch {}
+    } catch (err) {
+      console.warn('[Tally] plain keychain (service) write failed:', err);
+    }
 
     // 5. Standard Keychain
     try {
       await SecureStore.setItemAsync('tally_widget_data', jsonStr, {
         keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
       });
-    } catch {}
+    } catch (err) {
+      console.warn('[Tally] standard keychain write failed:', err);
+    }
 
   } catch (e) {
     console.warn('[Tally] syncToWidget error:', e);

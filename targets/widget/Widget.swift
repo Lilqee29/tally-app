@@ -46,7 +46,12 @@ struct KeychainHelper {
         "com.qomex.tally.shared"
     ]
 
+    // DEBUG: last status codes seen, so we can render them in the widget UI
+    static var debugLog: [String] = []
+
     static func load() -> Data? {
+        debugLog = []
+
         // 1. Try known Access Groups with service="app"
         for group in possibleGroups {
             let query: [String: Any] = [
@@ -58,7 +63,9 @@ struct KeychainHelper {
                 kSecMatchLimit as String: kSecMatchLimitOne
             ]
             var item: CFTypeRef?
-            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            debugLog.append("group=\(group) status=\(status)")
+            if status == errSecSuccess, let data = item as? Data {
                 return data
             }
         }
@@ -71,7 +78,9 @@ struct KeychainHelper {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var item2: CFTypeRef?
-        if SecItemCopyMatching(defaultQuery as CFDictionary, &item2) == errSecSuccess, let data = item2 as? Data {
+        let status2 = SecItemCopyMatching(defaultQuery as CFDictionary, &item2)
+        debugLog.append("default status=\(status2)")
+        if status2 == errSecSuccess, let data = item2 as? Data {
             return data
         }
 
@@ -288,6 +297,13 @@ struct EmptyStateView: View {
                 .foregroundColor(Color(hex: "#8E8E93"))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
+
+            // TEMP DEBUG — remove once this is working
+            Text(KeychainHelper.debugLog.joined(separator: "\n"))
+                .font(.system(size: 8))
+                .foregroundColor(.red)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 4)
         }
     }
 }
@@ -494,5 +510,3 @@ struct TallyWidgetBundle: WidgetBundle {
         MultiTasksWidget()
     }
 }
-
-
