@@ -31,14 +31,12 @@ jobs:
 
       - name: Build unsigned IPA
         run: |
-          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
-          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json | grep -A 5 '"schemes"' | grep -v 'schemes' | head -n 1 | tr -d ' ",' | xargs)
-          echo "Using workspace: $WORKSPACE with scheme: $SCHEME"
           xcodebuild \
-            -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
+            -workspace ios/Tally.xcworkspace \
+            -scheme Tally \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             build
@@ -46,9 +44,7 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
-          echo "Found app bundle at $APP_PATH"
-          cp -r "$APP_PATH" Payload/
+          cp -r build/Build/Products/Release-iphoneos/Tally.app Payload/
           zip -r tally.ipa Payload/
           echo "IPA packaged successfully"
 
