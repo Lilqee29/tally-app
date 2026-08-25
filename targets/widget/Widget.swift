@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
 import Security
 
 // ─────────────────────────────────────────────
@@ -58,6 +59,76 @@ struct KeychainHelper {
 }
 
 // ─────────────────────────────────────────────
+// MARK: - App Entities & Query for Widget Configuration
+// ─────────────────────────────────────────────
+
+struct TaskEntity: AppEntity {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Task")
+    
+    struct TaskQuery: EntityQuery {
+        func entities(for identifiers: [String]) async throws -> [TaskEntity] {
+            let payload = loadPayload()
+            let questions = payload?.questions ?? []
+            return questions
+                .filter { identifiers.contains($0.id) }
+                .map { TaskEntity(id: $0.id, title: $0.title) }
+        }
+
+        func suggestedEntities() async throws -> [TaskEntity] {
+            let payload = loadPayload()
+            let questions = payload?.questions ?? []
+            return questions.map { TaskEntity(id: $0.id, title: $0.title) }
+        }
+
+        func defaultResult() async -> TaskEntity? {
+            let payload = loadPayload()
+            if let first = payload?.questions.first {
+                return TaskEntity(id: first.id, title: first.title)
+            }
+            return nil
+        }
+    }
+
+    static var defaultQuery = TaskQuery()
+
+    let id: String
+    let title: String
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(title)")
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Configuration Intents (img2 & img3)
+// ─────────────────────────────────────────────
+
+struct SingleTaskIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Task"
+    static var description = IntentDescription("Tracks one task")
+
+    @Parameter(title: "Task")
+    var task: TaskEntity?
+}
+
+struct MultiTasksIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Tasks"
+    static var description = IntentDescription("Tracks up to 3 tasks")
+
+    @Parameter(title: "First Task")
+    var firstTask: TaskEntity?
+
+    @Parameter(title: "Second Task")
+    var secondTask: TaskEntity?
+
+    @Parameter(title: "Third Task")
+    var thirdTask: TaskEntity?
+
+    @Parameter(title: "Show Week History", default: true)
+    var showWeekHistory: Bool
+}
+
+// ─────────────────────────────────────────────
 // MARK: - Timeline Entry
 // ─────────────────────────────────────────────
 
@@ -66,8 +137,7 @@ struct TallyEntry: TimelineEntry {
     let questions: [TallyQuestion]
     let todayAnswers: [TallyAnswer]
     let weekHistory: [String: [String: String]]
-    let appearance: String
-    let coloredText: Bool
+    let showWeekHistory: Bool
 }
 
 enum DotState {
@@ -79,13 +149,13 @@ enum DotState {
 // ─────────────────────────────────────────────
 
 func loadPayload() -> WidgetPayload? {
-    // 1. Try Shared Keychain first (Free Apple ID compatible)
+    // 1. Shared Keychain
     if let data = KeychainHelper.load(),
        let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
         return payload
     }
 
-    // 2. Try App Group (if provisioned)
+    // 2. Shared App Group
     if let suite = UserDefaults(suiteName: APP_GROUP),
        let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
        let data = jsonStr.data(using: .utf8),
@@ -93,7 +163,7 @@ func loadPayload() -> WidgetPayload? {
         return payload
     }
 
-    // 3. Try Standard UserDefaults fallback
+    // 3. Standard UserDefaults
     if let jsonStr = UserDefaults.standard.string(forKey: WIDGET_DATA_KEY),
        let data = jsonStr.data(using: .utf8),
        let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
@@ -103,33 +173,60 @@ func loadPayload() -> WidgetPayload? {
     return nil
 }
 
-func makeEntry() -> TallyEntry {
-    if let payload = loadPayload() {
-        return TallyEntry(
+// ─────────────────────────────────────────────
+// MARK: - Timeline Providers (AppIntentTimelineProvider)
+// ─────────────────────────────────────────────
+
+struct SingleTaskProvider: AppIntentTimelineProvider {
+    typealias Entry = TallyEntry
+    typealias Intent = SingleTaskIntent
+
+    func placeholder(in context: Context) -> TallyEntry {
+        TallyEntry(
             date: Date(),
-            questions: payload.questions,
-            todayAnswers: payload.todayAnswers,
-            weekHistory: payload.weekHistory,
-            appearance: payload.appearance ?? "auto",
-            coloredText: payload.coloredText ?? true
+            questions: [TallyQuestion(id: "1", title: "Did I go for a run?", dotColor: "#0A84FF")],
+            todayAnswers: [TallyAnswer(questionId: "1", date: todayString(), value: "no", answeredAt: "2026-08-25T18:07:00Z")],
+            weekHistory: [:],
+            showWeekHistory: false
         )
     }
-    return TallyEntry(
-        date: Date(),
-        questions: [],
-        todayAnswers: [],
-        weekHistory: [:],
-        appearance: "auto",
-        coloredText: true
-    )
+
+    func snapshot(for configuration: SingleTaskIntent, in context: Context) async -> TallyEntry {
+        entry(for: configuration)
+    }
+
+    func timeline(for configuration: SingleTaskIntent, in context: Context) async -> Timeline<TallyEntry> {
+        let currentEntry = entry(for: configuration)
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
+        return Timeline(entries: [currentEntry], policy: .after(nextUpdate))
+    }
+
+    private func entry(for configuration: SingleTaskIntent) -> TallyEntry {
+        let payload = loadPayload()
+        let allQuestions = payload?.questions ?? []
+        let todayAnswers = payload?.todayAnswers ?? []
+        let weekHistory = payload?.weekHistory ?? [:]
+
+        var selectedQuestions: [TallyQuestion] = []
+        if let taskId = configuration.task?.id, let match = allQuestions.first(where: { $0.id == taskId }) {
+            selectedQuestions = [match]
+        } else if let first = allQuestions.first {
+            selectedQuestions = [first]
+        }
+
+        return TallyEntry(
+            date: Date(),
+            questions: selectedQuestions,
+            todayAnswers: todayAnswers,
+            weekHistory: weekHistory,
+            showWeekHistory: false
+        )
+    }
 }
 
-// ─────────────────────────────────────────────
-// MARK: - Timeline Provider
-// ─────────────────────────────────────────────
-
-struct TallyProvider: TimelineProvider {
+struct MultiTasksProvider: AppIntentTimelineProvider {
     typealias Entry = TallyEntry
+    typealias Intent = MultiTasksIntent
 
     func placeholder(in context: Context) -> TallyEntry {
         TallyEntry(
@@ -145,23 +242,46 @@ struct TallyProvider: TimelineProvider {
                 TallyAnswer(questionId: "3", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z")
             ],
             weekHistory: [:],
-            appearance: "auto",
-            coloredText: true
+            showWeekHistory: true
         )
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (TallyEntry) -> Void) {
-        if context.isPreview && loadPayload() == nil {
-            completion(placeholder(in: context))
-        } else {
-            completion(makeEntry())
-        }
+    func snapshot(for configuration: MultiTasksIntent, in context: Context) async -> TallyEntry {
+        entry(for: configuration)
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<TallyEntry>) -> Void) {
-        let entry = makeEntry()
+    func timeline(for configuration: MultiTasksIntent, in context: Context) async -> Timeline<TallyEntry> {
+        let currentEntry = entry(for: configuration)
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        return Timeline(entries: [currentEntry], policy: .after(nextUpdate))
+    }
+
+    private func entry(for configuration: MultiTasksIntent) -> TallyEntry {
+        let payload = loadPayload()
+        let allQuestions = payload?.questions ?? []
+        let todayAnswers = payload?.todayAnswers ?? []
+        let weekHistory = payload?.weekHistory ?? [:]
+
+        var selectedQuestions: [TallyQuestion] = []
+        let configuredIds = [configuration.firstTask?.id, configuration.secondTask?.id, configuration.thirdTask?.id].compactMap { $0 }
+
+        if !configuredIds.isEmpty {
+            for id in configuredIds {
+                if let match = allQuestions.first(where: { $0.id == id }) {
+                    selectedQuestions.append(match)
+                }
+            }
+        } else {
+            selectedQuestions = Array(allQuestions.prefix(3))
+        }
+
+        return TallyEntry(
+            date: Date(),
+            questions: selectedQuestions,
+            todayAnswers: todayAnswers,
+            weekHistory: weekHistory,
+            showWeekHistory: configuration.showWeekHistory
+        )
     }
 }
 
@@ -187,6 +307,21 @@ func formatTimestamp(_ isoString: String) -> String {
     let out = DateFormatter()
     out.dateFormat = "EEE d, HH:mm"
     return out.string(from: date)
+}
+
+func buildWeekDots(questionId: String, weekHistory: [String: [String: String]]) -> [DotState] {
+    let history = weekHistory[questionId] ?? [:]
+    return (0..<7).map { offset in
+        let d = Calendar.current.date(byAdding: .day, value: -(6 - offset), to: Date())!
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let key = f.string(from: d)
+        switch history[key] {
+        case "yes": return .yes
+        case "no": return .no
+        default: return .unanswered
+        }
+    }
 }
 
 extension Color {
@@ -328,6 +463,7 @@ struct MultiTaskWidgetView: View {
                     let ans = entry.todayAnswers.first { $0.questionId == question.id && $0.date == todayStr }
                     let isYes = ans?.value == "yes"
                     let isNo = ans?.value == "no"
+                    let dots = buildWeekDots(questionId: question.id, weekHistory: entry.weekHistory)
 
                     HStack(alignment: .center, spacing: 8) {
                         // Title + timestamp subtitle
@@ -350,10 +486,21 @@ struct MultiTaskWidgetView: View {
 
                         Spacer()
 
-                        // Color Dot indicator
-                        Circle()
-                            .fill(Color(hex: question.dotColor))
-                            .frame(width: 10, height: 10)
+                        if entry.showWeekHistory {
+                            // Mini week dots if enabled
+                            HStack(spacing: 3) {
+                                ForEach(0..<dots.count, id: \.self) { i in
+                                    Circle()
+                                        .fill(dotColor(dots[i], customColor: Color(hex: question.dotColor)))
+                                        .frame(width: 5, height: 5)
+                                }
+                            }
+                        } else {
+                            // Color Dot indicator
+                            Circle()
+                                .fill(Color(hex: question.dotColor))
+                                .frame(width: 10, height: 10)
+                        }
 
                         // YES / NO state badge
                         if isYes {
@@ -378,17 +525,29 @@ struct MultiTaskWidgetView: View {
             .padding(.vertical, 2)
         }
     }
+
+    private func dotColor(_ state: DotState, customColor: Color) -> Color {
+        switch state {
+        case .yes: return customColor
+        case .no: return Color(hex: "#2C2C2E")
+        case .unanswered: return Color(hex: "#2C2C2E").opacity(0.5)
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Widget Definitions
+// MARK: - Widget Definitions (AppIntentConfiguration)
 // ─────────────────────────────────────────────
 
 struct SingleTaskWidget: Widget {
     let kind: String = "SingleTaskWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: SingleTaskIntent.self,
+            provider: SingleTaskProvider()
+        ) { entry in
             SingleTaskWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
                     Color(hex: "#1C1C1E")
@@ -404,7 +563,11 @@ struct MultiTasksWidget: Widget {
     let kind: String = "MultiTasksWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: MultiTasksIntent.self,
+            provider: MultiTasksProvider()
+        ) { entry in
             MultiTaskWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
                     Color(hex: "#1C1C1E")
@@ -427,3 +590,4 @@ struct TallyWidgetBundle: WidgetBundle {
         MultiTasksWidget()
     }
 }
+
