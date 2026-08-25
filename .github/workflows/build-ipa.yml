@@ -15,7 +15,7 @@ jobs:
       - name: List installed Xcode versions
         run: ls -d /Applications/Xcode*
 
-      - name: Select latest Xcode
+      - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: 'latest-stable'
@@ -31,6 +31,14 @@ jobs:
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
+
+      - name: Patch ExpoModulesJSI Swift 6.2 Interop
+        run: |
+          HEADER="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h"
+          if [ -f "$HEADER" ]; then
+            echo "Patching $HEADER..."
+            sed -i '' 's/SWIFT_RETURNS_RETAINED //g' "$HEADER"
+          fi
 
       - name: Expo Prebuild (iOS, clean)
         env:
