@@ -23,6 +23,9 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Install xcbeautify
+        run: brew install xcbeautify
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
@@ -31,6 +34,7 @@ jobs:
 
       - name: Build unsigned IPA with Widget
         run: |
+          set -o pipefail
           xcodebuild \
             -workspace ios/Tally.xcworkspace \
             -scheme Tally \
@@ -44,7 +48,7 @@ jobs:
             DEVELOPMENT_TEAM="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            build
+            build 2>&1 | xcbeautify
 
       - name: Package IPA
         run: |
