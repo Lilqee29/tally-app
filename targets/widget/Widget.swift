@@ -8,6 +8,7 @@ import Security
 
 let APP_GROUP = "group.com.qomex.tally"
 let WIDGET_DATA_KEY = "tally_widget_data"
+let SHARED_PASTEBOARD_NAME = "com.qomex.tally.shared.pasteboard"
 
 struct TallyQuestion: Codable, Identifiable, Hashable {
     let id: String
@@ -134,6 +135,15 @@ func loadPayloadFromSuite(_ suite: UserDefaults) -> WidgetPayload? {
 }
 
 func loadPayload() -> WidgetPayload? {
+    // 0. Read from named Pasteboard — shared purely by Team ID, no
+    // entitlement required.
+    if let pb = UIPasteboard(name: UIPasteboard.Name(SHARED_PASTEBOARD_NAME), create: false),
+       let jsonStr = pb.string,
+       let data = jsonStr.data(using: .utf8),
+       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+        return payload
+    }
+
     // 1. Read from shared Keychain
     if let data = KeychainHelper.load(),
        let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
@@ -299,7 +309,9 @@ struct EmptyStateView: View {
                 .padding(.horizontal, 12)
 
             // TEMP DEBUG — remove once this is working
-            Text(KeychainHelper.debugLog.joined(separator: "\n"))
+            let pbValue = UIPasteboard(name: UIPasteboard.Name(SHARED_PASTEBOARD_NAME), create: false)?.string ?? "nil"
+            let debugLines = ["pasteboard=" + pbValue] + KeychainHelper.debugLog
+            Text(debugLines.joined(separator: "\n"))
                 .font(.system(size: 8))
                 .foregroundColor(.red)
                 .multilineTextAlignment(.center)

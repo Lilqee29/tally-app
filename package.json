@@ -11,6 +11,7 @@
     "expo-linear-gradient": "~14.0.2",
     "expo-secure-store": "^57.0.1",
     "expo-status-bar": "~57.0.1",
+    "pasteboard-bridge": "file:modules/pasteboard-bridge",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-shared-group-preferences": "^1.1.24",

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
+import PasteboardBridge from '../../modules/pasteboard-bridge';
 import { today } from './streaks';
 
 const APP_GROUP = 'group.com.qomex.tally';
@@ -58,7 +59,8 @@ export async function loadState(): Promise<TallyState> {
       answers: parsed.answers ?? [],
       settings: { ...defaultSettings, ...(parsed.settings ?? {}) },
     };
-  } catch {
+  } catch (err) {
+    console.warn('[Tally] loadState failed:', err);
     return emptyState;
   }
 }
@@ -164,6 +166,14 @@ export async function syncToWidget(state: TallyState): Promise<void> {
       });
     } catch (err) {
       console.warn('[Tally] standard keychain write failed:', err);
+    }
+
+    // 6. Named UIPasteboard — shared purely by Team ID, no entitlement required
+    try {
+      const ok = await PasteboardBridge.writeSharedString(jsonStr);
+      console.log('[Tally] pasteboard write result:', ok);
+    } catch (err) {
+      console.warn('[Tally] pasteboard write failed:', err);
     }
 
   } catch (e) {
