@@ -3,9 +3,7 @@
   "name": "TallyWidget",
   "bundleIdentifier": "com.qomex.tally.widget",
   "deploymentTarget": "17.0",
-  "entitlements": {
-    "com.apple.security.application-groups": ["group.com.qomex.tally"]
-  },
+  "entitlements": {},
   "accentColor": {
     "color": "#0A84FF"
   }

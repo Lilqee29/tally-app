@@ -15,9 +15,7 @@ module.exports = {
       supportsTablet: false,
       bundleIdentifier: 'com.qomex.tally',
       deploymentTarget: '17.0',
-      entitlements: {
-        'com.apple.security.application-groups': ['group.com.qomex.tally'],
-      },
+      entitlements: {},
       infoPlist: {
         UIBackgroundModes: [],
       },

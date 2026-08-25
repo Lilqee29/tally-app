@@ -348,21 +348,33 @@ struct TallyWidget: Widget {
 // ─────────────────────────────────────────────
 
 func loadPayload() -> WidgetPayload? {
-    guard
-        let suite = UserDefaults(suiteName: APP_GROUP),
-        let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
-        let data = jsonStr.data(using: .utf8)
-    else { return nil }
-    return try? JSONDecoder().decode(WidgetPayload.self, from: data)
+    // Try App Group first (works if entitlement is provisioned)
+    if let suite = UserDefaults(suiteName: APP_GROUP),
+       let jsonStr = suite.string(forKey: WIDGET_DATA_KEY),
+       let data = jsonStr.data(using: .utf8),
+       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+        return payload
+    }
+    // Fallback: standard UserDefaults (no entitlement required)
+    if let jsonStr = UserDefaults.standard.string(forKey: WIDGET_DATA_KEY),
+       let data = jsonStr.data(using: .utf8),
+       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
+        return payload
+    }
+    return nil
 }
 
 func savePayload(_ payload: WidgetPayload) {
     guard
-        let suite = UserDefaults(suiteName: APP_GROUP),
         let data = try? JSONEncoder().encode(payload),
         let jsonStr = String(data: data, encoding: .utf8)
     else { return }
-    suite.set(jsonStr, forKey: WIDGET_DATA_KEY)
+    // Try App Group first
+    if let suite = UserDefaults(suiteName: APP_GROUP) {
+        suite.set(jsonStr, forKey: WIDGET_DATA_KEY)
+    }
+    // Also save to standard UserDefaults as fallback
+    UserDefaults.standard.set(jsonStr, forKey: WIDGET_DATA_KEY)
 }
 
 func isoToday() -> String {
