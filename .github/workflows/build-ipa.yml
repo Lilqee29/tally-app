@@ -12,10 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: List installed Xcode versions
+        run: ls -d /Applications/Xcode*
+
+      - name: Select latest Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.1'
+          xcode-version: 'latest-stable'
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
