@@ -7,10 +7,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.1'
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -23,10 +28,6 @@ jobs:
 
       - name: Expo Prebuild (iOS, clean)
         run: npx expo prebuild --platform ios --clean
-
-      - name: Install CocoaPods
-        working-directory: ios
-        run: pod install
 
       - name: Build unsigned IPA
         run: |
