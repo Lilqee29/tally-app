@@ -83,6 +83,10 @@ jobs:
             DEVELOPMENT_TEAM="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            STRIP_INSTALLED_PRODUCT=NO \
+            STRIP_SWIFT_SYMBOLS=NO \
+            DEPLOYMENT_POSTPROCESSING=NO \
+            OTHER_LDFLAGS="-Wl,-segalign,0x4000" \
             2>&1 | tee xcodebuild.log | xcbeautify || {
               echo "=== BUILD FAILED - FULL ERROR DETAILS ==="
               grep -A 30 -E "error:|fatal error:|BUILD FAILED" xcodebuild.log || tail -n 100 xcodebuild.log
@@ -112,15 +116,15 @@ jobs:
           # 1. Sign all embedded frameworks & dylibs
           find "$APP_PATH" \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - --timestamp=none {} + 2>/dev/null || true
 
-          # 2. Sign the widget extension specifically (generates valid 16KB ARM64 page hashes)
+          # 2. Sign the widget extension specifically (preserves 16KB alignment)
           if [ -d "$APP_PATH/PlugIns/TallyWidget.appex" ]; then
             echo "Ad-hoc signing TallyWidget.appex..."
-            codesign --force --sign - --timestamp=none "$APP_PATH/PlugIns/TallyWidget.appex"
+            codesign --force --sign - --timestamp=none --preserve-metadata=identifier,entitlements,flags "$APP_PATH/PlugIns/TallyWidget.appex"
           fi
 
           # 3. Sign the main app bundle
           echo "Ad-hoc signing main app..."
-          codesign --force --sign - --timestamp=none "$APP_PATH"
+          codesign --force --sign - --timestamp=none --preserve-metadata=identifier,entitlements,flags "$APP_PATH"
 
           # 4. Verify signature hierarchy
           echo "=== Code Signature Verification ==="
