@@ -22,14 +22,6 @@
         "UIBackgroundModes": []
       }
     },
-    "plugins": [
-      [
-        "@bacons/apple-targets",
-        {
-          "appleTeamId": "YOUR_TEAM_ID"
-        }
-      ]
-    ],
     "assetBundlePatterns": ["**/*"],
     "newArchEnabled": false
   }

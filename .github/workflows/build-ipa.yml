@@ -39,12 +39,17 @@ jobs:
             -destination "generic/platform=iOS" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
             build
 
       - name: Package IPA
         run: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
+          echo "Found app at: $APP_PATH"
           mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/Tally.app Payload/
+          cp -r "$APP_PATH" Payload/
           zip -r tally.ipa Payload/
           echo "IPA packaged successfully"
 
