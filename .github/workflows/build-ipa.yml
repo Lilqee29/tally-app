@@ -3,7 +3,7 @@ name: Build iOS IPA
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Expo Prebuild (iOS, clean)
         run: npx expo prebuild --platform ios --clean
@@ -30,9 +30,12 @@ jobs:
 
       - name: Build unsigned IPA
         run: |
+          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json | grep -A 5 '"schemes"' | grep -v 'schemes' | head -n 1 | tr -d ' ",' | xargs)
+          echo "Using workspace: $WORKSPACE with scheme: $SCHEME"
           xcodebuild \
-            -workspace ios/tallyapp.xcworkspace \
-            -scheme tallyapp \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
@@ -42,7 +45,9 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/tallyapp.app Payload/
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
+          echo "Found app bundle at $APP_PATH"
+          cp -r "$APP_PATH" Payload/
           zip -r tally.ipa Payload/
           echo "IPA packaged successfully"
 
