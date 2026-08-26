@@ -1,6 +1,144 @@
 import WidgetKit
 import SwiftUI
 import Security
+import AppIntents
+import Foundation
+
+
+// ─────────────────────────────────────────────
+// MARK: - Supabase Widget Smoke Test Configuration
+// ─────────────────────────────────────────────
+
+/// Development-only WidgetKit/Supabase smoke test settings.
+/// Paste your Supabase project URL and anon/publishable key here to test direct
+/// widget HTTPS access. Never put the service-role key in the app or widget.
+enum SupabaseWidgetSmokeTestConfig {
+    static let projectURL = "" // Example: "https://your-project-ref.supabase.co"
+    static let anonPublishableKey = "" // Paste the anon/publishable key only; never the service-role key.
+
+    static var isConfigured: Bool {
+        !projectURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !anonPublishableKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+struct WidgetTestRow: Codable, Identifiable, Hashable {
+    let id: Int
+    let message: String
+    let acknowledged: Bool
+    let createdAt: String?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case message
+        case acknowledged
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+enum SupabaseWidgetSmokeTestError: Error {
+    case missingConfiguration
+    case invalidURL
+    case invalidResponse
+    case httpStatus(Int)
+}
+
+struct SupabaseWidgetSmokeTestClient {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func fetchLatestMessage() async throws -> WidgetTestRow {
+        guard SupabaseWidgetSmokeTestConfig.isConfigured else {
+            throw SupabaseWidgetSmokeTestError.missingConfiguration
+        }
+
+        var components = URLComponents(string: SupabaseWidgetSmokeTestConfig.projectURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rest/v1/widget_test")
+        components?.queryItems = [
+            URLQueryItem(name: "select", value: "id,message,acknowledged,created_at,updated_at"),
+            URLQueryItem(name: "order", value: "created_at.desc"),
+            URLQueryItem(name: "limit", value: "1")
+        ]
+
+        guard let url = components?.url else {
+            throw SupabaseWidgetSmokeTestError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        addHeaders(to: &request)
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response)
+
+        guard let row = try JSONDecoder().decode([WidgetTestRow].self, from: data).first else {
+            throw SupabaseWidgetSmokeTestError.invalidResponse
+        }
+
+        return row
+    }
+
+    func setAcknowledged(id: Int, acknowledged: Bool) async throws {
+        guard SupabaseWidgetSmokeTestConfig.isConfigured else {
+            throw SupabaseWidgetSmokeTestError.missingConfiguration
+        }
+
+        var components = URLComponents(string: SupabaseWidgetSmokeTestConfig.projectURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rest/v1/widget_test")
+        components?.queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+
+        guard let url = components?.url else {
+            throw SupabaseWidgetSmokeTestError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        addHeaders(to: &request)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder().encode(["acknowledged": acknowledged])
+
+        let (_, response) = try await session.data(for: request)
+        try validate(response: response)
+    }
+
+    private func addHeaders(to request: inout URLRequest) {
+        request.setValue(SupabaseWidgetSmokeTestConfig.anonPublishableKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(SupabaseWidgetSmokeTestConfig.anonPublishableKey)", forHTTPHeaderField: "Authorization")
+    }
+
+    private func validate(response: URLResponse) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw SupabaseWidgetSmokeTestError.invalidResponse
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            throw SupabaseWidgetSmokeTestError.httpStatus(http.statusCode)
+        }
+    }
+}
+
+struct AcknowledgeWidgetTestIntent: AppIntent {
+    static var title: LocalizedStringResource = "Acknowledge Widget Test"
+    static var description = IntentDescription("Marks the Supabase widget smoke test row as acknowledged.")
+
+    @Parameter(title: "Row ID")
+    var id: Int
+
+    init() {}
+
+    init(id: Int) {
+        self.id = id
+    }
+
+    func perform() async throws -> some IntentResult {
+        try await SupabaseWidgetSmokeTestClient().setAcknowledged(id: id, acknowledged: true)
+        WidgetCenter.shared.reloadAllTimelines()
+        return .result()
+    }
+}
 
 // ─────────────────────────────────────────────
 // MARK: - Shared Data Structures
@@ -98,6 +236,8 @@ struct TallyEntry: TimelineEntry {
     let questions: [TallyQuestion]
     let todayAnswers: [TallyAnswer]
     let weekHistory: [String: [String: String]]
+    let widgetTestRow: WidgetTestRow?
+    let widgetTestStatus: String?
 }
 
 enum DotState {
@@ -175,14 +315,29 @@ func makeEntry() -> TallyEntry {
             date: Date(),
             questions: questions,
             todayAnswers: payload.todayAnswers ?? [],
-            weekHistory: payload.weekHistory ?? [:]
+            weekHistory: payload.weekHistory ?? [:],
+            widgetTestRow: nil,
+            widgetTestStatus: nil
         )
     }
     return TallyEntry(
         date: Date(),
         questions: [],
         todayAnswers: [],
-        weekHistory: [:]
+        weekHistory: [:],
+        widgetTestRow: nil,
+        widgetTestStatus: nil
+    )
+}
+
+func makeSupabaseSmokeTestEntry(row: WidgetTestRow?, status: String?) -> TallyEntry {
+    TallyEntry(
+        date: Date(),
+        questions: [],
+        todayAnswers: [],
+        weekHistory: [:],
+        widgetTestRow: row,
+        widgetTestStatus: status
     )
 }
 
@@ -207,7 +362,9 @@ struct TallyProvider: TimelineProvider {
                 TallyAnswer(questionId: "2", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z"),
                 TallyAnswer(questionId: "3", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z")
             ],
-            weekHistory: [:]
+            weekHistory: [:],
+            widgetTestRow: nil,
+            widgetTestStatus: nil
         )
     }
 
@@ -215,14 +372,31 @@ struct TallyProvider: TimelineProvider {
         if context.isPreview && loadPayload() == nil {
             completion(placeholder(in: context))
         } else {
-            completion(makeEntry())
+            Task {
+                completion(await makeNetworkBackedEntry())
+            }
         }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TallyEntry>) -> Void) {
-        let entry = makeEntry()
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        Task {
+            let entry = await makeNetworkBackedEntry()
+            let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
+            completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        }
+    }
+
+    private func makeNetworkBackedEntry() async -> TallyEntry {
+        guard SupabaseWidgetSmokeTestConfig.isConfigured else {
+            return makeEntry()
+        }
+
+        do {
+            let row = try await SupabaseWidgetSmokeTestClient().fetchLatestMessage()
+            return makeSupabaseSmokeTestEntry(row: row, status: nil)
+        } catch {
+            return makeSupabaseSmokeTestEntry(row: nil, status: "Supabase unavailable")
+        }
     }
 }
 
@@ -320,6 +494,40 @@ struct EmptyStateView: View {
     }
 }
 
+
+struct SupabaseSmokeTestView: View {
+    let row: WidgetTestRow?
+    let status: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Supabase Smoke Test")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(Color(hex: "#8E8E93"))
+
+            Text(row?.message ?? status ?? "Configure Supabase keys")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(3)
+
+            Text(row.map { $0.acknowledged ? "Acknowledged: YES" : "Acknowledged: NO" } ?? "No Supabase row loaded")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(row?.acknowledged == true ? Color(hex: "#30D158") : Color(hex: "#FFD60A"))
+
+            Spacer()
+
+            if let row, !row.acknowledged {
+                Button(intent: AcknowledgeWidgetTestIntent(id: row.id)) {
+                    Label("Yes", systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(hex: "#0A84FF"))
+            }
+        }
+        .padding(4)
+    }
+}
+
 // ─────────────────────────────────────────────
 // MARK: - Single Task Widget View (img1 & img5)
 // ─────────────────────────────────────────────
@@ -329,7 +537,11 @@ struct SingleTaskWidgetView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        if entry.questions.isEmpty {
+        if let row = entry.widgetTestRow {
+            SupabaseSmokeTestView(row: row, status: entry.widgetTestStatus)
+        } else if SupabaseWidgetSmokeTestConfig.isConfigured, entry.questions.isEmpty {
+            SupabaseSmokeTestView(row: nil, status: entry.widgetTestStatus ?? "Supabase unavailable")
+        } else if entry.questions.isEmpty {
             EmptyStateView()
         } else {
             let question = entry.questions.first!
@@ -404,7 +616,11 @@ struct MultiTaskWidgetView: View {
     let entry: TallyEntry
 
     var body: some View {
-        if entry.questions.isEmpty {
+        if let row = entry.widgetTestRow {
+            SupabaseSmokeTestView(row: row, status: entry.widgetTestStatus)
+        } else if SupabaseWidgetSmokeTestConfig.isConfigured, entry.questions.isEmpty {
+            SupabaseSmokeTestView(row: nil, status: entry.widgetTestStatus ?? "Supabase unavailable")
+        } else if entry.questions.isEmpty {
             EmptyStateView()
         } else {
             let displayedQuestions = Array(entry.questions.prefix(3))
