@@ -15,9 +15,9 @@
     but production safety depends on proper Supabase RLS. Never use a
     service-role key in an app or widget.
   -->
-  <key>SUPABASE_WIDGET_PROJECT_URL</key>
+  <key>https://qjqapoyahwjngukczmug.supabase.co</key>
   <string>$(SUPABASE_WIDGET_PROJECT_URL)</string>
-  <key>SUPABASE_WIDGET_ANON_KEY</key>
+  <key>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqcWFwb3lhaHdqbmd1a2N6bXVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3Mjg2NDYsImV4cCI6MjEwMzMwNDY0Nn0.R7sGtLzRz4VnowaCuO5FBjKZv66Hl2o5Z3iMf4Dqa7g</key>
   <string>$(SUPABASE_WIDGET_ANON_KEY)</string>
 </dict>
 </plist>
