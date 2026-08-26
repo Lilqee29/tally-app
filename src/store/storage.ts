@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import { writeSharedString } from '../../modules/pasteboard-bridge';
 import { today } from './streaks';
+import { mergeSupabaseWidgetAnswers, syncStateToSupabaseWidget } from './supabaseWidgetSync';
 
 const APP_GROUP = 'group.com.qomex.tally';
 const STORAGE_KEY = '@tally_state';
@@ -54,11 +55,12 @@ export async function loadState(): Promise<TallyState> {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyState;
     const parsed = JSON.parse(raw) as Partial<TallyState>;
-    return {
+    const localState = {
       questions: parsed.questions ?? [],
       answers: parsed.answers ?? [],
       settings: { ...defaultSettings, ...(parsed.settings ?? {}) },
     };
+    return await mergeSupabaseWidgetAnswers(localState);
   } catch (err) {
     console.warn('[Tally] loadState failed:', err);
     return emptyState;
@@ -168,7 +170,14 @@ export async function syncToWidget(state: TallyState): Promise<void> {
       console.warn('[Tally] standard keychain write failed:', err);
     }
 
-    // 6. Named UIPasteboard — shared purely by Team ID, no entitlement required
+    // 6. Supabase fallback for WidgetKit builds without App Groups/keychain sharing.
+    try {
+      await syncStateToSupabaseWidget(state);
+    } catch (err) {
+      console.warn('[Tally] Supabase widget sync failed:', err);
+    }
+
+    // 7. Named UIPasteboard — shared purely by Team ID, no entitlement required
     try {
       const ok = await writeSharedString(jsonStr);
       console.log('[Tally] pasteboard write result:', ok);

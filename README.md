@@ -93,6 +93,9 @@ This repository includes a small proof of concept for testing whether the iOS Wi
 
 1. Open your Supabase project dashboard.
 2. Go to **SQL Editor**.
+3. Copy and run `supabase/widget_test.sql` for the original smoke row, then run `supabase/widget_tasks.sql` for the real app-to-widget task snapshot table.
+
+The smoke-test SQL creates `public.widget_test` with:
 3. Copy and run `supabase/widget_test.sql`.
 
 The SQL creates `public.widget_test` with:
@@ -103,12 +106,19 @@ The SQL creates `public.widget_test` with:
 - `created_at`
 - `updated_at`
 
+It also seeds one row with `Hello from Supabase`, enables RLS, and adds temporary development-only anon read/update policies. The real widget SQL creates `public.widget_tasks`, where the app writes the current task snapshot and today's answer state, and the WidgetKit extension reads the first three active tasks.
 It also seeds one row with `Hello from Supabase`, enables RLS, and adds temporary development-only anon read/update policies.
 
 > **Production warning:** those policies are intentionally unsafe and are only for this smoke test. Replace them with authenticated per-user RLS before shipping any real user data.
 
 ### 2. Configure the widget placeholders
 
+The widget reads its Supabase values from `targets/widget/Info.plist` keys, and the React Native app reads matching Expo public environment variables:
+
+- Widget native build settings: `SUPABASE_WIDGET_PROJECT_URL`, `SUPABASE_WIDGET_ANON_KEY`
+- App bundle environment variables: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+
+Those values are committed only as Xcode build-setting placeholders (`$(SUPABASE_WIDGET_PROJECT_URL)` and `$(SUPABASE_WIDGET_ANON_KEY)`) so real project values do not need to live in Swift source or git history. Keep the Info.plist keys/placeholders in the file, but remove any real Supabase values if you pasted them there.
 The widget reads its smoke-test values from `targets/widget/Info.plist` keys:
 
 - `SUPABASE_WIDGET_PROJECT_URL`
@@ -130,6 +140,9 @@ For the GitHub Actions IPA build in this repository, you do **not** need to past
 - `SUPABASE_WIDGET_PROJECT_URL`
 - `SUPABASE_WIDGET_ANON_KEY`
 
+The workflow passes those same secrets into both places: `xcodebuild archive` expands the matching placeholders in `targets/widget/Info.plist` for WidgetKit, and the Expo prebuild step exposes them as `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` for the app bundle.
+
+For EAS or another CI provider, use equivalent CI secrets/environment variables and inject them into the native build settings/prebuild step. This keeps them out of the repository, but remember: any value embedded in an iOS app/widget can still be extracted from the shipped binary.
 The workflow passes those secrets into `xcodebuild archive`, which expands the matching placeholders in `targets/widget/Info.plist` at build time.
 
 For EAS or another CI provider, use equivalent CI secrets/environment variables and inject them into the native build settings/prebuild step. This keeps them out of the repository, but remember: any value embedded in an iOS app/widget can still be extracted from the shipped binary.
@@ -146,6 +159,10 @@ The smoke test currently lives inside `targets/widget/Widget.swift`, which is al
 After configuring the placeholders and rebuilding/installing the app with the widget extension:
 
 1. Add the Tally widget to the iOS home screen.
+2. The main app writes your ordered task list to `public.widget_tasks` whenever local state is saved.
+3. The widget should display the first three active tasks from the app.
+4. On iOS 17+, tapping a task's **YES** button runs `AcknowledgeWidgetTestIntent`, patches that task's `today_value = yes`, `answered_date`, and `answered_at` in Supabase, and requests `WidgetCenter.shared.reloadAllTimelines()`.
+5. When the app hydrates again, it merges today's Supabase-backed widget `yes` values back into the local app state.
 2. The widget should display `Hello from Supabase` from `public.widget_test`.
 3. On iOS 17+, tapping the widget's **Yes** button runs `AcknowledgeWidgetTestIntent`, patches `acknowledged = true` in Supabase, and requests `WidgetCenter.shared.reloadAllTimelines()`.
 

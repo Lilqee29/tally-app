@@ -44,6 +44,8 @@ jobs:
         env:
           RCT_NEW_ARCH_ENABLED: 0
           EXPO_USE_NEW_ARCH: 0
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_WIDGET_PROJECT_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_WIDGET_ANON_KEY }}
         run: |
           npx expo prebuild --platform ios --clean
           ls -la ios/
@@ -62,6 +64,9 @@ jobs:
             -skipMacroValidation
 
       - name: Build unsigned IPA with Widget (Archive)
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_WIDGET_PROJECT_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_WIDGET_ANON_KEY }}
         run: |
           set -o pipefail
           WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
