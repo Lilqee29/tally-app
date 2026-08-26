@@ -8,7 +8,13 @@ import {
   defaultSettings,
   loadState,
   saveState,
+  saveLocalOnly,
+  syncToWidget,
 } from './storage';
+import {
+  clearSupabaseWidgetAnswer,
+  readWidgetTodayAnswers,
+} from './supabaseWidgetSync';
 import { colors } from '../theme/colors';
 
 interface TallyStore {
@@ -35,6 +41,9 @@ interface TallyStore {
 
   // Settings
   updateSettings: (patch: Partial<Settings>) => void;
+
+  // Widget sync
+  syncFromWidget: () => Promise<void>;
 }
 
 let dotColorIndex = 0;
@@ -141,6 +150,11 @@ export const useStore = create<TallyStore>((set, get) => ({
     set({ answers: updated });
     saveState({ questions: get().questions, answers: updated, settings: get().settings });
 
+    // Also clear in Supabase so the widget sees the undo
+    clearSupabaseWidgetAnswer(questionId).catch((err) =>
+      console.warn('[Tally] clearSupabaseWidgetAnswer failed:', err)
+    );
+
     if (get().settings.soundHaptics) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -158,5 +172,53 @@ export const useStore = create<TallyStore>((set, get) => ({
     const updated = { ...get().settings, ...patch };
     set({ settings: updated });
     saveState({ questions: get().questions, answers: get().answers, settings: updated });
+  },
+
+  // ── Widget → App sync (polling) ──────────────────────────
+  syncFromWidget: async () => {
+    try {
+      const widgetAnswers = await readWidgetTodayAnswers();
+      if (widgetAnswers.size === 0) return;
+
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const state = get();
+      const updatedAnswers = [...state.answers];
+      let changed = false;
+
+      for (const [questionId, value] of widgetAnswers) {
+        const question = state.questions.find((q) => q.id === questionId);
+        if (!question) continue;
+
+        const existingIndex = updatedAnswers.findIndex(
+          (a) => a.questionId === questionId && a.date === todayStr
+        );
+
+        if (value === 'yes' && existingIndex < 0) {
+          // Widget marked yes — app doesn't have it yet
+          updatedAnswers.push({
+            questionId,
+            date: todayStr,
+            value: 'yes',
+            answeredAt: new Date().toISOString(),
+          });
+          changed = true;
+        } else if (value !== 'yes' && existingIndex >= 0) {
+          // Widget cleared the answer — remove from app
+          updatedAnswers.splice(existingIndex, 1);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        set({ answers: updatedAnswers });
+        await saveLocalOnly({
+          questions: state.questions,
+          answers: updatedAnswers,
+          settings: state.settings,
+        });
+      }
+    } catch (err) {
+      console.warn('[Tally] syncFromWidget failed:', err);
+    }
   },
 }));

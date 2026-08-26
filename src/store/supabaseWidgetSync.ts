@@ -125,3 +125,56 @@ export async function mergeSupabaseWidgetAnswers(state: TallyState): Promise<Tal
 
   return { ...state, answers: mergedAnswers };
 }
+
+/**
+ * Read today's answers from Supabase widget_tasks for all active tasks.
+ * Returns a map of questionId → 'yes' | null so the app can detect
+ * widget-side changes (marks and undos).
+ */
+export async function readWidgetTodayAnswers(): Promise<Map<string, 'yes' | null>> {
+  const map = new Map<string, 'yes' | null>();
+  if (!isConfigured()) return map;
+
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const params = new URLSearchParams({
+    select: 'id,today_value,answered_date',
+    active: 'eq.true',
+  });
+
+  const response = await fetch(restUrl(`widget_tasks?${params.toString()}`), {
+    headers: headers(),
+  });
+
+  if (!response.ok) return map;
+
+  const rows = (await response.json()) as WidgetTaskRow[];
+  for (const row of rows) {
+    if (row.answered_date === todayStr && row.today_value === 'yes') {
+      map.set(row.id, 'yes');
+    } else {
+      map.set(row.id, null);
+    }
+  }
+  return map;
+}
+
+/**
+ * Clear a task's today answer in Supabase (widget undo).
+ * Sets today_value, answered_date, answered_at all to null.
+ */
+export async function clearSupabaseWidgetAnswer(questionId: string): Promise<void> {
+  if (!isConfigured()) return;
+
+  await fetch(restUrl(`widget_tasks?id=eq.${questionId}`), {
+    method: 'PATCH',
+    headers: headers({
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    }),
+    body: JSON.stringify({
+      today_value: null,
+      answered_date: null,
+      answered_at: null,
+    }),
+  });
+}

@@ -138,6 +138,37 @@ struct SupabaseWidgetClient {
         try validate(response: response)
     }
 
+    func clearAnsweredYes(id: String) async throws {
+        guard SupabaseWidgetConfig.isConfigured else {
+            throw SupabaseWidgetError.missingConfiguration
+        }
+
+        var components = URLComponents(
+            string: SupabaseWidgetConfig.projectURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rest/v1/widget_tasks"
+        )
+        components?.queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+
+        guard let url = components?.url else {
+            throw SupabaseWidgetError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        addHeaders(to: &request)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+
+        let body: [String: Any?] = [
+            "today_value": nil,
+            "answered_date": nil,
+            "answered_at": nil
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await session.data(for: request)
+        try validate(response: response)
+    }
+
     private func addHeaders(to request: inout URLRequest) {
         request.setValue(SupabaseWidgetConfig.anonPublishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(SupabaseWidgetConfig.anonPublishableKey)", forHTTPHeaderField: "Authorization")
@@ -172,6 +203,26 @@ struct MarkTaskDoneIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         try await SupabaseWidgetClient().setAnsweredYes(id: id)
+        WidgetCenter.shared.reloadAllTimelines()
+        return .result()
+    }
+}
+
+struct SetTaskUndoneIntent: AppIntent {
+    static var title: LocalizedStringResource = "Undo Task"
+    static var description = IntentDescription("Clears a Tally task's answer for today, undoing a previous YES.")
+
+    @Parameter(title: "Task ID")
+    var id: String
+
+    init() {}
+
+    init(id: String) {
+        self.id = id
+    }
+
+    func perform() async throws -> some IntentResult {
+        try await SupabaseWidgetClient().clearAnsweredYes(id: id)
         WidgetCenter.shared.reloadAllTimelines()
         return .result()
     }
@@ -563,9 +614,12 @@ struct SupabaseTasksView: View {
                         Spacer()
 
                         if task.todayValue == "yes", task.answeredDate == todayString() {
-                            Text("YES")
-                                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                .foregroundColor(Color(hex: "#0A84FF"))
+                            Button(intent: SetTaskUndoneIntent(id: task.id)) {
+                                Text("YES")
+                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                    .foregroundColor(Color(hex: "#0A84FF"))
+                            }
+                            .buttonStyle(.plain)
                         } else {
                             Button(intent: MarkTaskDoneIntent(id: task.id)) {
                                 Text("YES")

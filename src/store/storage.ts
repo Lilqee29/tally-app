@@ -78,6 +78,18 @@ export async function saveState(state: TallyState): Promise<void> {
 }
 
 /**
+ * Save state to AsyncStorage ONLY — no widget/Supabase sync.
+ * Used when pulling in widget-originated changes to avoid circular sync loops.
+ */
+export async function saveLocalOnly(state: TallyState): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('[Tally] saveLocalOnly error:', e);
+  }
+}
+
+/**
  * Write a slim, widget-readable snapshot to the shared App Group UserDefaults.
  * The Swift widget reads this via UserDefaults(suiteName: "group.com.qomex.tally").
  * Both the main app and widget extension must have "com.apple.security.application-groups"

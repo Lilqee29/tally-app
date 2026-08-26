@@ -10,6 +10,7 @@ export default function App() {
   const markDone = useStore((s) => s.markDone);
   const undoAnswer = useStore((s) => s.undoAnswer);
   const getTodayAnswer = useStore((s) => s.getTodayAnswer);
+  const syncFromWidget = useStore((s) => s.syncFromWidget);
 
   useEffect(() => {
     hydrate();
@@ -37,6 +38,19 @@ export default function App() {
     const sub = Linking.addEventListener('url', (e) => handleUrl(e.url));
     return () => sub.remove();
   }, []);
+
+  // Poll Supabase for widget-originated changes every 5 seconds
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const poll = () => {
+      syncFromWidget().catch(() => {});
+    };
+
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [isLoaded]);
 
   if (!isLoaded) {
     return (
