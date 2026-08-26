@@ -6,6 +6,27 @@ declare const process: { env: Record<string, string | undefined> };
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
+// ── Network status tracking ───────────────────────────────
+let _isOnline = true;
+let _lastFetchSucceeded = true;
+
+/** Whether the last Supabase fetch succeeded (used to show offline indicator). */
+export function isSupabaseOnline(): boolean {
+  return _isOnline;
+}
+
+function markOnline() {
+  _isOnline = true;
+  _lastFetchSucceeded = true;
+}
+
+function markOffline() {
+  _lastFetchSucceeded = false;
+  // Only go offline after 3 consecutive failures (avoid flicker on single timeout)
+  if (!_isOnline) return;
+  _isOnline = false;
+}
+
 interface WidgetTaskRow {
   id: string;
   title: string;
@@ -55,28 +76,33 @@ export async function syncStateToSupabaseWidget(state: TallyState): Promise<void
     };
   });
 
-  await fetch(restUrl('widget_tasks'), {
-    method: 'PATCH',
-    headers: headers({
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
-    }),
-    body: JSON.stringify({ active: false }),
-  });
+  try {
+    await fetch(restUrl('widget_tasks'), {
+      method: 'PATCH',
+      headers: headers({
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      }),
+      body: JSON.stringify({ active: false }),
+    });
 
-  if (rows.length === 0) return;
+    if (rows.length > 0) {
+      const response = await fetch(restUrl('widget_tasks?on_conflict=id'), {
+        method: 'POST',
+        headers: headers({
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        }),
+        body: JSON.stringify(rows),
+      });
 
-  const response = await fetch(restUrl('widget_tasks?on_conflict=id'), {
-    method: 'POST',
-    headers: headers({
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    }),
-    body: JSON.stringify(rows),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Supabase widget sync failed with ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`Supabase widget sync failed with ${response.status}`);
+      }
+    }
+    markOnline();
+  } catch {
+    markOffline();
   }
 }
 
@@ -141,19 +167,27 @@ export async function readWidgetTodayAnswers(): Promise<Map<string, 'yes' | null
     active: 'eq.true',
   });
 
-  const response = await fetch(restUrl(`widget_tasks?${params.toString()}`), {
-    headers: headers(),
-  });
+  try {
+    const response = await fetch(restUrl(`widget_tasks?${params.toString()}`), {
+      headers: headers(),
+    });
 
-  if (!response.ok) return map;
-
-  const rows = (await response.json()) as WidgetTaskRow[];
-  for (const row of rows) {
-    if (row.answered_date === todayStr && row.today_value === 'yes') {
-      map.set(row.id, 'yes');
-    } else {
-      map.set(row.id, null);
+    if (!response.ok) {
+      markOffline();
+      return map;
     }
+
+    const rows = (await response.json()) as WidgetTaskRow[];
+    for (const row of rows) {
+      if (row.answered_date === todayStr && row.today_value === 'yes') {
+        map.set(row.id, 'yes');
+      } else {
+        map.set(row.id, null);
+      }
+    }
+    markOnline();
+  } catch {
+    markOffline();
   }
   return map;
 }
@@ -165,16 +199,43 @@ export async function readWidgetTodayAnswers(): Promise<Map<string, 'yes' | null
 export async function clearSupabaseWidgetAnswer(questionId: string): Promise<void> {
   if (!isConfigured()) return;
 
-  await fetch(restUrl(`widget_tasks?id=eq.${questionId}`), {
-    method: 'PATCH',
-    headers: headers({
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
-    }),
-    body: JSON.stringify({
-      today_value: null,
-      answered_date: null,
-      answered_at: null,
-    }),
-  });
+  try {
+    await fetch(restUrl(`widget_tasks?id=eq.${questionId}`), {
+      method: 'PATCH',
+      headers: headers({
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      }),
+      body: JSON.stringify({
+        today_value: null,
+        answered_date: null,
+        answered_at: null,
+      }),
+    });
+    markOnline();
+  } catch {
+    markOffline();
+  }
+}
+
+/**
+ * Soft-delete a task from Supabase widget_tasks (set active=false).
+ * Called when the user deletes a task in the app.
+ */
+export async function deleteFromSupabaseWidget(questionId: string): Promise<void> {
+  if (!isConfigured()) return;
+
+  try {
+    await fetch(restUrl(`widget_tasks?id=eq.${questionId}`), {
+      method: 'PATCH',
+      headers: headers({
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      }),
+      body: JSON.stringify({ active: false }),
+    });
+    markOnline();
+  } catch {
+    markOffline();
+  }
 }

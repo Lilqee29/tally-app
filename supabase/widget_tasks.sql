@@ -61,3 +61,11 @@ for update
 to anon
 using (true)
 with check (true);
+
+-- TEMPORARY DEVELOPMENT-ONLY: unsafe public delete policy for task removal.
+drop policy if exists "widget_tasks_dev_anon_delete" on public.widget_tasks;
+create policy "widget_tasks_dev_anon_delete"
+on public.widget_tasks
+for delete
+to anon
+using (true);

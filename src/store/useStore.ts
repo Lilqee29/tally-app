@@ -13,7 +13,9 @@ import {
 } from './storage';
 import {
   clearSupabaseWidgetAnswer,
+  deleteFromSupabaseWidget,
   readWidgetTodayAnswers,
+  isSupabaseOnline,
 } from './supabaseWidgetSync';
 import { colors } from '../theme/colors';
 
@@ -23,6 +25,7 @@ interface TallyStore {
   answers: Answer[];
   settings: Settings;
   isLoaded: boolean;
+  isOnline: boolean;
 
   // Init
   hydrate: () => Promise<void>;
@@ -59,6 +62,7 @@ export const useStore = create<TallyStore>((set, get) => ({
   answers: [],
   settings: defaultSettings,
   isLoaded: false,
+  isOnline: true,
 
   // ── Hydrate from AsyncStorage ─────────────────────────────
   hydrate: async () => {
@@ -98,6 +102,11 @@ export const useStore = create<TallyStore>((set, get) => ({
     const answersUpdated = get().answers.filter((a) => a.questionId !== id);
     set({ questions: updated, answers: answersUpdated });
     saveState({ questions: updated, answers: answersUpdated, settings: get().settings });
+
+    // Also soft-delete from Supabase so the widget removes it
+    deleteFromSupabaseWidget(id).catch((err) =>
+      console.warn('[Tally] deleteFromSupabaseWidget failed:', err)
+    );
   },
 
   reorderQuestions: (newOrder) => {
@@ -178,6 +187,8 @@ export const useStore = create<TallyStore>((set, get) => ({
   syncFromWidget: async () => {
     try {
       const widgetAnswers = await readWidgetTodayAnswers();
+      set({ isOnline: isSupabaseOnline() });
+
       if (widgetAnswers.size === 0) return;
 
       const todayStr = format(new Date(), 'yyyy-MM-dd');

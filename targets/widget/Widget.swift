@@ -547,7 +547,7 @@ extension Color {
 struct EmptyStateView: View {
     let message: String
 
-    init(message: String = "Open Tally to add tasks.") {
+    init(message: String = "Touch and hold to edit widget\nand select task.") {
         self.message = message
     }
 
@@ -562,15 +562,6 @@ struct EmptyStateView: View {
                 .foregroundColor(Color(hex: "#8E8E93"))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
-
-            // TEMP DEBUG — remove once local fallback is no longer needed
-            let pbValue = UIPasteboard(name: UIPasteboard.Name(SHARED_PASTEBOARD_NAME), create: false)?.string ?? "nil"
-            let debugLines = ["pasteboard=" + pbValue] + KeychainHelper.debugLog
-            Text(debugLines.joined(separator: "\n"))
-                .font(.system(size: 8))
-                .foregroundColor(.red)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 4)
         }
     }
 }
@@ -585,7 +576,7 @@ struct SupabaseTasksView: View {
 
     var body: some View {
         if tasks.isEmpty {
-            EmptyStateView(message: status ?? "Open Tally to add tasks.")
+            EmptyStateView(message: status ?? "Touch and hold to edit widget\nand select task.")
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(tasks) { task in
