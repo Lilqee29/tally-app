@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.widgetkit-extension</string>
+  </dict>
+  <!--
+    Development-only Supabase WidgetKit smoke-test values.
+    These strings are build-setting placeholders so real values do not need to be
+    committed to git. Provide them as Xcode user-defined build settings or via
+    your CI/xcodebuild command. The anon/publishable key is not a true secret,
+    but production safety depends on proper Supabase RLS. Never use a
+    service-role key in an app or widget.
+  -->
+  <key>SUPABASE_WIDGET_PROJECT_URL</key>
+  <string>$(SUPABASE_WIDGET_PROJECT_URL)</string>
+  <key>SUPABASE_WIDGET_ANON_KEY</key>
+  <string>$(SUPABASE_WIDGET_ANON_KEY)</string>
+</dict>
+</plist>

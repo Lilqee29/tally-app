@@ -10,15 +10,34 @@ import Foundation
 // ─────────────────────────────────────────────
 
 /// Development-only WidgetKit/Supabase smoke test settings.
-/// Paste your Supabase project URL and anon/publishable key here to test direct
-/// widget HTTPS access. Never put the service-role key in the app or widget.
+/// Values are read from the widget extension Info.plist so real values can be
+/// supplied at build time without committing them to Swift source. The
+/// anon/publishable key is not a true secret once shipped in a client binary;
+/// production safety must come from proper Supabase RLS. Never put the
+/// service-role key in the app or widget.
 enum SupabaseWidgetSmokeTestConfig {
-    static let projectURL = "" // Example: "https://your-project-ref.supabase.co"
-    static let anonPublishableKey = "" // Paste the anon/publishable key only; never the service-role key.
+    private static let projectURLInfoKey = "SUPABASE_WIDGET_PROJECT_URL"
+    private static let anonKeyInfoKey = "SUPABASE_WIDGET_ANON_KEY"
+
+    static var projectURL: String {
+        infoString(forKey: projectURLInfoKey)
+    }
+
+    static var anonPublishableKey: String {
+        infoString(forKey: anonKeyInfoKey)
+    }
 
     static var isConfigured: Bool {
-        !projectURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !anonPublishableKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isUsable(projectURL) && isUsable(anonPublishableKey)
+    }
+
+    private static func infoString(forKey key: String) -> String {
+        Bundle.main.object(forInfoDictionaryKey: key) as? String ?? ""
+    }
+
+    private static func isUsable(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !trimmed.hasPrefix("$(")
     }
 }
 
