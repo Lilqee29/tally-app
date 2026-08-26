@@ -115,6 +115,7 @@ The widget reads its smoke-test values from `targets/widget/Info.plist` keys:
 - `SUPABASE_WIDGET_ANON_KEY`
 
 Those values are committed only as Xcode build-setting placeholders (`$(SUPABASE_WIDGET_PROJECT_URL)` and `$(SUPABASE_WIDGET_ANON_KEY)`) so real project values do not need to live in Swift source or git history. Keep the Info.plist keys/placeholders in the file, but remove any real Supabase values if you pasted them there.
+Those values are committed only as Xcode build-setting placeholders (`$(SUPABASE_WIDGET_PROJECT_URL)` and `$(SUPABASE_WIDGET_ANON_KEY)`) so real project values do not need to live in Swift source or git history.
 
 For a local Xcode smoke test, add matching **User-Defined Build Settings** to the widget extension target or pass them to `xcodebuild`, for example:
 
@@ -132,6 +133,7 @@ For the GitHub Actions IPA build in this repository, you do **not** need to past
 The workflow passes those secrets into `xcodebuild archive`, which expands the matching placeholders in `targets/widget/Info.plist` at build time.
 
 For EAS or another CI provider, use equivalent CI secrets/environment variables and inject them into the native build settings/prebuild step. This keeps them out of the repository, but remember: any value embedded in an iOS app/widget can still be extracted from the shipped binary.
+For CI/EAS, store those values as CI/EAS secrets or environment variables and inject them into the native build settings/prebuild step. This keeps them out of the repository, but remember: any value embedded in an iOS app/widget can still be extracted from the shipped binary.
 
 Use only the Supabase anon/publishable key. The anon/publishable key is not a service secret; it is designed to be used by clients, but it is only safe when RLS is correctly designed. **Never put the service-role key in the iOS app or widget.**
 
