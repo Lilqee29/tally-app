@@ -6,11 +6,9 @@ declare const process: { env: Record<string, string | undefined> };
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-// ── Network status tracking ───────────────────────────────
 let _isOnline = true;
 let _lastFetchSucceeded = true;
 
-/** Whether the last Supabase fetch succeeded (used to show offline indicator). */
 export function isSupabaseOnline(): boolean {
   return _isOnline;
 }
@@ -22,7 +20,6 @@ function markOnline() {
 
 function markOffline() {
   _lastFetchSucceeded = false;
-  // Only go offline after 3 consecutive failures (avoid flicker on single timeout)
   if (!_isOnline) return;
   _isOnline = false;
 }
@@ -106,6 +103,68 @@ export async function syncStateToSupabaseWidget(state: TallyState): Promise<void
   }
 }
 
+/**
+ * Restore the complete question list and today's answers from the widget_tasks
+ * mirror when the app has no local AsyncStorage state yet.
+ */
+export async function loadStateFromSupabaseWidget(): Promise<TallyState | null> {
+  if (!isConfigured()) return null;
+
+  try {
+    const params = new URLSearchParams({
+      select: 'id,title,display_order,dot_color,today_value,answered_date,answered_at,active',
+      active: 'eq.true',
+      order: 'display_order.asc',
+    });
+
+    const response = await fetch(restUrl(`widget_tasks?${params.toString()}`), {
+      headers: headers(),
+    });
+
+    if (!response.ok) {
+      markOffline();
+      return null;
+    }
+
+    const rows = (await response.json()) as WidgetTaskRow[];
+    markOnline();
+
+    if (rows.length === 0) return null;
+
+    const questions: Question[] = rows.map((row, index) => ({
+      id: row.id,
+      title: row.title,
+      createdAt: new Date().toISOString(),
+      order: row.display_order ?? index,
+      dotColor: row.dot_color,
+    }));
+
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const answers: Answer[] = rows
+      .filter((row) => row.today_value === 'yes' && row.answered_date === todayStr)
+      .map((row) => ({
+        questionId: row.id,
+        date: todayStr,
+        value: 'yes',
+        answeredAt: row.answered_at ?? new Date().toISOString(),
+      }));
+
+    return {
+      questions,
+      answers,
+      settings: {
+        widgetAppearance: 'auto',
+        coloredText: true,
+        requireConfirmation: false,
+        soundHaptics: true,
+      },
+    };
+  } catch {
+    markOffline();
+    return null;
+  }
+}
+
 export async function mergeSupabaseWidgetAnswers(state: TallyState): Promise<TallyState> {
   if (!isConfigured()) return state;
 
@@ -152,11 +211,6 @@ export async function mergeSupabaseWidgetAnswers(state: TallyState): Promise<Tal
   return { ...state, answers: mergedAnswers };
 }
 
-/**
- * Read today's answers from Supabase widget_tasks for all active tasks.
- * Returns a map of questionId → 'yes' | null so the app can detect
- * widget-side changes (marks and undos).
- */
 export async function readWidgetTodayAnswers(): Promise<Map<string, 'yes' | null>> {
   const map = new Map<string, 'yes' | null>();
   if (!isConfigured()) return map;
@@ -192,10 +246,6 @@ export async function readWidgetTodayAnswers(): Promise<Map<string, 'yes' | null
   return map;
 }
 
-/**
- * Clear a task's today answer in Supabase (widget undo).
- * Sets today_value, answered_date, answered_at all to null.
- */
 export async function clearSupabaseWidgetAnswer(questionId: string): Promise<void> {
   if (!isConfigured()) return;
 
@@ -218,10 +268,6 @@ export async function clearSupabaseWidgetAnswer(questionId: string): Promise<voi
   }
 }
 
-/**
- * Soft-delete a task from Supabase widget_tasks (set active=false).
- * Called when the user deletes a task in the app.
- */
 export async function deleteFromSupabaseWidget(questionId: string): Promise<void> {
   if (!isConfigured()) return;
 
