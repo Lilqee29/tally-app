@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import SharedGroupPreferences from 'react-native-shared-group-preferences';
 import { writeSharedString } from '../../modules/pasteboard-bridge';
 import { today } from './streaks';
-import { mergeSupabaseWidgetAnswers, syncStateToSupabaseWidget } from './supabaseWidgetSync';
+import { loadStateFromSupabaseWidget, mergeSupabaseWidgetAnswers, syncStateToSupabaseWidget } from './supabaseWidgetSync';
 
 const APP_GROUP = 'group.com.qomex.tally';
 const STORAGE_KEY = '@tally_state';
@@ -18,9 +18,9 @@ export interface Question {
 
 export interface Answer {
   questionId: string;
-  date: string;        // YYYY-MM-DD
+  date: string;
   value: 'yes' | 'no';
-  answeredAt: string;  // ISO timestamp
+  answeredAt: string;
 }
 
 export interface Settings {
@@ -49,18 +49,28 @@ const emptyState: TallyState = {
   settings: defaultSettings,
 };
 
-/** Load full state from AsyncStorage */
+/** Load full state from AsyncStorage, falling back to Supabase on a fresh install. */
 export async function loadState(): Promise<TallyState> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyState;
-    const parsed = JSON.parse(raw) as Partial<TallyState>;
-    const localState = {
-      questions: parsed.questions ?? [],
-      answers: parsed.answers ?? [],
-      settings: { ...defaultSettings, ...(parsed.settings ?? {}) },
-    };
-    return await mergeSupabaseWidgetAnswers(localState);
+
+    // Existing install: keep the normal local-first behavior.
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<TallyState>;
+      const localState: TallyState = {
+        questions: parsed.questions ?? [],
+        answers: parsed.answers ?? [],
+        settings: { ...defaultSettings, ...(parsed.settings ?? {}) },
+      };
+      return await mergeSupabaseWidgetAnswers(localState);
+    }
+
+    // Fresh install: recover the question list and today's answers from Supabase.
+    const remoteState = await loadStateFromSupabaseWidget();
+    if (!remoteState) return emptyState;
+
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(remoteState));
+    return remoteState;
   } catch (err) {
     console.warn('[Tally] loadState failed:', err);
     return emptyState;
@@ -196,7 +206,6 @@ export async function syncToWidget(state: TallyState): Promise<void> {
     } catch (err) {
       console.warn('[Tally] pasteboard write failed:', err);
     }
-
   } catch (e) {
     console.warn('[Tally] syncToWidget error:', e);
   }
