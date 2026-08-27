@@ -8,22 +8,12 @@ import Foundation
 // MARK: - Supabase Widget Configuration
 // ─────────────────────────────────────────────
 
-/// Values are read from the widget extension Info.plist so real values can be
-/// supplied at build time without committing them to Swift source. The
-/// anon/publishable key is not a true secret once shipped in a client binary;
-/// production safety must come from proper Supabase RLS. Never put the
-/// service-role key in the app or widget.
 enum SupabaseWidgetConfig {
     private static let projectURLInfoKey = "SUPABASE_WIDGET_PROJECT_URL"
     private static let anonKeyInfoKey = "SUPABASE_WIDGET_ANON_KEY"
 
-    static var projectURL: String {
-        infoString(forKey: projectURLInfoKey)
-    }
-
-    static var anonPublishableKey: String {
-        infoString(forKey: anonKeyInfoKey)
-    }
+    static var projectURL: String { infoString(forKey: projectURLInfoKey) }
+    static var anonPublishableKey: String { infoString(forKey: anonKeyInfoKey) }
 
     static var isConfigured: Bool {
         isUsable(projectURL) && isUsable(anonPublishableKey)
@@ -71,6 +61,29 @@ enum SupabaseWidgetError: Error {
 }
 
 // ─────────────────────────────────────────────
+// MARK: - Local Cache (widget's own UserDefaults —
+// no App Group needed, this only needs to survive
+// between this extension's own timeline refreshes)
+// ─────────────────────────────────────────────
+
+enum TaskCache {
+    private static let key = "cached_supabase_tasks"
+
+    static func save(_ tasks: [SupabaseWidgetTask]) {
+        guard let data = try? JSONEncoder().encode(tasks) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    static func load() -> [SupabaseWidgetTask]? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let tasks = try? JSONDecoder().decode([SupabaseWidgetTask].self, from: data) else {
+            return nil
+        }
+        return tasks
+    }
+}
+
+// ─────────────────────────────────────────────
 // MARK: - Supabase Client
 // ─────────────────────────────────────────────
 
@@ -110,35 +123,14 @@ struct SupabaseWidgetClient {
     }
 
     func setAnsweredYes(id: String) async throws {
-        guard SupabaseWidgetConfig.isConfigured else {
-            throw SupabaseWidgetError.missingConfiguration
-        }
-
-        var components = URLComponents(
-            string: SupabaseWidgetConfig.projectURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/rest/v1/widget_tasks"
-        )
-        components?.queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
-
-        guard let url = components?.url else {
-            throw SupabaseWidgetError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        addHeaders(to: &request)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try JSONEncoder().encode([
-            "today_value": "yes",
-            "answered_date": todayString(),
-            "answered_at": ISO8601DateFormatter().string(from: Date())
-        ])
-
-        let (_, response) = try await session.data(for: request)
-        try validate(response: response)
+        try await patchAnswer(id: id, value: "yes", date: todayString(), answeredAt: ISO8601DateFormatter().string(from: Date()))
     }
 
     func clearAnsweredYes(id: String) async throws {
+        try await patchAnswer(id: id, value: nil, date: nil, answeredAt: nil)
+    }
+
+    private func patchAnswer(id: String, value: String?, date: String?, answeredAt: String?) async throws {
         guard SupabaseWidgetConfig.isConfigured else {
             throw SupabaseWidgetError.missingConfiguration
         }
@@ -159,9 +151,9 @@ struct SupabaseWidgetClient {
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
 
         let body: [String: Any?] = [
-            "today_value": nil,
-            "answered_date": nil,
-            "answered_at": nil
+            "today_value": value,
+            "answered_date": date,
+            "answered_at": answeredAt
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -185,21 +177,18 @@ struct SupabaseWidgetClient {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Interactive Intent
+// MARK: - Interactive Intents
 // ─────────────────────────────────────────────
 
 struct MarkTaskDoneIntent: AppIntent {
     static var title: LocalizedStringResource = "Mark Task Done"
-    static var description = IntentDescription("Marks a Supabase-backed Tally task as done for today.")
+    static var description = IntentDescription("Marks a Tally task as done for today.")
 
     @Parameter(title: "Task ID")
     var id: String
 
     init() {}
-
-    init(id: String) {
-        self.id = id
-    }
+    init(id: String) { self.id = id }
 
     func perform() async throws -> some IntentResult {
         try await SupabaseWidgetClient().setAnsweredYes(id: id)
@@ -210,16 +199,13 @@ struct MarkTaskDoneIntent: AppIntent {
 
 struct SetTaskUndoneIntent: AppIntent {
     static var title: LocalizedStringResource = "Undo Task"
-    static var description = IntentDescription("Clears a Tally task's answer for today, undoing a previous YES.")
+    static var description = IntentDescription("Clears a Tally task's answer for today.")
 
     @Parameter(title: "Task ID")
     var id: String
 
     init() {}
-
-    init(id: String) {
-        self.id = id
-    }
+    init(id: String) { self.id = id }
 
     func perform() async throws -> some IntentResult {
         try await SupabaseWidgetClient().clearAnsweredYes(id: id)
@@ -229,248 +215,67 @@ struct SetTaskUndoneIntent: AppIntent {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Local Fallback Data Structures
-// ─────────────────────────────────────────────
-
-let APP_GROUP = "group.com.qomex.tally"
-let WIDGET_DATA_KEY = "tally_widget_data"
-let SHARED_PASTEBOARD_NAME = "com.qomex.tally.shared.pasteboard"
-
-struct TallyQuestion: Codable, Identifiable, Hashable {
-    let id: String
-    let title: String
-    let dotColor: String?
-
-    var safeColor: String {
-        dotColor ?? "#0A84FF"
-    }
-}
-
-struct TallyAnswer: Codable {
-    let questionId: String
-    let date: String?
-    let value: String?   // "yes" | "no"
-    let answeredAt: String?
-}
-
-struct WidgetPayload: Codable {
-    let questions: [TallyQuestion]?
-    let todayAnswers: [TallyAnswer]?
-    let weekHistory: [String: [String: String]]?
-    let appearance: String?
-    let coloredText: Bool?
-    let updatedAt: String?
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Keychain Helper (Shared Keychain)
-// ─────────────────────────────────────────────
-
-struct KeychainHelper {
-    static let key = "tally_widget_data"
-    static let possibleGroups = [
-        "7622586DZY.com.qomex.tally.shared",
-        "com.qomex.tally.shared"
-    ]
-
-    static var debugLog: [String] = []
-
-    static func load() -> Data? {
-        debugLog = []
-
-        for group in possibleGroups {
-            let query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrAccount as String: key,
-                kSecAttrService as String: "app",
-                kSecAttrAccessGroup as String: group,
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne
-            ]
-            var item: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &item)
-            debugLog.append("group=\(group) status=\(status)")
-            if status == errSecSuccess, let data = item as? Data {
-                return data
-            }
-        }
-
-        let defaultQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item2: CFTypeRef?
-        let status2 = SecItemCopyMatching(defaultQuery as CFDictionary, &item2)
-        debugLog.append("default status=\(status2)")
-        if status2 == errSecSuccess, let data = item2 as? Data {
-            return data
-        }
-
-        return nil
-    }
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Timeline Entry
+// MARK: - Timeline Entry & Provider
 // ─────────────────────────────────────────────
 
 struct TallyEntry: TimelineEntry {
     let date: Date
-    let questions: [TallyQuestion]
-    let todayAnswers: [TallyAnswer]
-    let weekHistory: [String: [String: String]]
-    let supabaseTasks: [SupabaseWidgetTask]
+    let tasks: [SupabaseWidgetTask]
     let statusMessage: String?
+    let isPlaceholder: Bool
 }
-
-enum DotState {
-    case yes, no, unanswered
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Local Data Loader (Multi-Channel Fallback)
-// ─────────────────────────────────────────────
-
-func loadPayloadFromSuite(_ suite: UserDefaults) -> WidgetPayload? {
-    if let dict = suite.dictionary(forKey: WIDGET_DATA_KEY),
-       let data = try? JSONSerialization.data(withJSONObject: dict),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-        return payload
-    }
-
-    for key in [WIDGET_DATA_KEY, "tally_widget_data_str"] {
-        if let jsonStr = suite.string(forKey: key),
-           let data = jsonStr.data(using: .utf8),
-           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-            return payload
-        }
-    }
-
-    if let data = suite.data(forKey: WIDGET_DATA_KEY),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-        return payload
-    }
-
-    return nil
-}
-
-func loadPayload() -> WidgetPayload? {
-    if let pb = UIPasteboard(name: UIPasteboard.Name(SHARED_PASTEBOARD_NAME), create: false),
-       let jsonStr = pb.string,
-       let data = jsonStr.data(using: .utf8),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-        return payload
-    }
-
-    if let data = KeychainHelper.load(),
-       let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-        return payload
-    }
-
-    if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP) {
-        let fileURL = containerURL.appendingPathComponent("tally_widget_data.json")
-        if let data = try? Data(contentsOf: fileURL),
-           let payload = try? JSONDecoder().decode(WidgetPayload.self, from: data) {
-            return payload
-        }
-    }
-
-    if let suite = UserDefaults(suiteName: APP_GROUP),
-       let payload = loadPayloadFromSuite(suite) {
-        return payload
-    }
-
-    return loadPayloadFromSuite(UserDefaults.standard)
-}
-
-func makeLocalEntry() -> TallyEntry {
-    if let payload = loadPayload(), let questions = payload.questions, !questions.isEmpty {
-        return TallyEntry(
-            date: Date(),
-            questions: questions,
-            todayAnswers: payload.todayAnswers ?? [],
-            weekHistory: payload.weekHistory ?? [:],
-            supabaseTasks: [],
-            statusMessage: nil
-        )
-    }
-    return TallyEntry(
-        date: Date(),
-        questions: [],
-        todayAnswers: [],
-        weekHistory: [:],
-        supabaseTasks: [],
-        statusMessage: nil
-    )
-}
-
-func makeSupabaseEntry(tasks: [SupabaseWidgetTask], status: String?) -> TallyEntry {
-    TallyEntry(
-        date: Date(),
-        questions: [],
-        todayAnswers: [],
-        weekHistory: [:],
-        supabaseTasks: tasks,
-        statusMessage: status
-    )
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Timeline Provider
-// ─────────────────────────────────────────────
 
 struct TallyProvider: TimelineProvider {
     typealias Entry = TallyEntry
 
+    /// Cheap synthetic sample used ONLY for the widget gallery preview.
+    /// Never hits the network — Apple explicitly requires this to be fast.
     func placeholder(in context: Context) -> TallyEntry {
-        TallyEntry(
-            date: Date(),
-            questions: [
-                TallyQuestion(id: "1", title: "Did I go for a run?", dotColor: "#0A84FF"),
-                TallyQuestion(id: "2", title: "Did I lock the door?", dotColor: "#FFD60A"),
-                TallyQuestion(id: "3", title: "Did I water the plants?", dotColor: "#30D158")
-            ],
-            todayAnswers: [
-                TallyAnswer(questionId: "1", date: todayString(), value: "no", answeredAt: "2026-08-25T18:07:00Z"),
-                TallyAnswer(questionId: "2", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z"),
-                TallyAnswer(questionId: "3", date: todayString(), value: "yes", answeredAt: "2026-08-25T18:07:00Z")
-            ],
-            weekHistory: [:],
-            supabaseTasks: [],
-            statusMessage: nil
-        )
+        let now = ISO8601DateFormatter().string(from: Date())
+        let sample = [
+            SupabaseWidgetTask(id: "sample-1", title: "Did I go for a run?", displayOrder: 0, dotColor: "#FF3B30", todayValue: nil, answeredDate: nil, answeredAt: nil),
+            SupabaseWidgetTask(id: "sample-2", title: "Did I lock the door?", displayOrder: 1, dotColor: "#FFD60A", todayValue: "yes", answeredDate: todayString(), answeredAt: now),
+            SupabaseWidgetTask(id: "sample-3", title: "Did I water the plants?", displayOrder: 2, dotColor: "#30D158", todayValue: "yes", answeredDate: todayString(), answeredAt: now)
+        ]
+        return TallyEntry(date: Date(), tasks: sample, statusMessage: nil, isPlaceholder: true)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TallyEntry) -> Void) {
-        if context.isPreview && loadPayload() == nil {
+        if context.isPreview {
             completion(placeholder(in: context))
         } else {
-            Task {
-                completion(await makeNetworkBackedEntry())
-            }
+            Task { completion(await makeEntry()) }
         }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TallyEntry>) -> Void) {
         Task {
-            let entry = await makeNetworkBackedEntry()
+            let entry = await makeEntry()
             let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
             completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
         }
     }
 
-    private func makeNetworkBackedEntry() async -> TallyEntry {
+    private func makeEntry() async -> TallyEntry {
         guard SupabaseWidgetConfig.isConfigured else {
-            return makeLocalEntry()
+            return TallyEntry(date: Date(), tasks: [], statusMessage: "Supabase not configured", isPlaceholder: false)
         }
 
         do {
             let tasks = try await SupabaseWidgetClient().fetchWidgetTasks()
-            return makeSupabaseEntry(tasks: tasks, status: tasks.isEmpty ? "Open Tally to add tasks." : nil)
+            TaskCache.save(tasks)  // update cache on every successful fetch
+            return TallyEntry(
+                date: Date(),
+                tasks: tasks,
+                statusMessage: tasks.isEmpty ? "Open Tally to add tasks." : nil,
+                isPlaceholder: false
+            )
         } catch {
-            return makeSupabaseEntry(tasks: [], status: "Supabase unavailable")
+            // Network/Supabase failed — fall back to last-known-good instead of blanking out.
+            if let cached = TaskCache.load() {
+                return TallyEntry(date: Date(), tasks: cached, statusMessage: nil, isPlaceholder: false)
+            }
+            return TallyEntry(date: Date(), tasks: [], statusMessage: "Supabase unavailable", isPlaceholder: false)
         }
     }
 }
@@ -499,21 +304,6 @@ func formatTimestamp(_ isoString: String) -> String {
     return out.string(from: date)
 }
 
-func buildWeekDots(questionId: String, weekHistory: [String: [String: String]]) -> [DotState] {
-    let history = weekHistory[questionId] ?? [:]
-    return (0..<7).map { offset in
-        let d = Calendar.current.date(byAdding: .day, value: -(6 - offset), to: Date())!
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        let key = f.string(from: d)
-        switch history[key] {
-        case "yes": return .yes
-        case "no": return .no
-        default: return .unanswered
-        }
-    }
-}
-
 extension Color {
     init(hex: String) {
         let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -530,33 +320,28 @@ extension Color {
         default:
             (a, r, g, b) = (255, 128, 128, 128)
         }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
-        )
+        self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255, opacity: Double(a) / 255)
     }
 }
 
+private func isAnsweredYesToday(_ task: SupabaseWidgetTask) -> Bool {
+    task.todayValue == "yes" && task.answeredDate == todayString()
+}
+
 // ─────────────────────────────────────────────
-// MARK: - Empty State View
+// MARK: - Empty State (redesigned — honest copy,
+// no reference to a task picker this build doesn't have)
 // ─────────────────────────────────────────────
 
 struct EmptyStateView: View {
     let message: String
-
-    init(message: String = "Touch and hold to edit widget\nand select task.") {
-        self.message = message
-    }
+    init(message: String = "Open Tally to add tasks.") { self.message = message }
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: "hand.tap.fill")
-                .font(.system(size: 28))
+            Image(systemName: "checklist")
+                .font(.system(size: 26))
                 .foregroundColor(Color(hex: "#8E8E93"))
-
             Text(message)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(Color(hex: "#8E8E93"))
@@ -567,7 +352,7 @@ struct EmptyStateView: View {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Supabase Tasks View
+// MARK: - Task List View (medium/large, up to 3)
 // ─────────────────────────────────────────────
 
 struct SupabaseTasksView: View {
@@ -576,10 +361,11 @@ struct SupabaseTasksView: View {
 
     var body: some View {
         if tasks.isEmpty {
-            EmptyStateView(message: status ?? "Touch and hold to edit widget\nand select task.")
+            EmptyStateView(message: status ?? "Open Tally to add tasks.")
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(tasks) { task in
+                    let isYes = isAnsweredYesToday(task)
                     HStack(alignment: .center, spacing: 8) {
                         Circle()
                             .fill(Color(hex: task.dotColor))
@@ -591,7 +377,7 @@ struct SupabaseTasksView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(1)
 
-                            if let answeredAt = task.answeredAt, task.todayValue == "yes", task.answeredDate == todayString() {
+                            if let answeredAt = task.answeredAt, isYes {
                                 HStack(spacing: 3) {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.system(size: 9))
@@ -604,7 +390,7 @@ struct SupabaseTasksView: View {
 
                         Spacer()
 
-                        if task.todayValue == "yes", task.answeredDate == todayString() {
+                        if isYes {
                             Button(intent: SetTaskUndoneIntent(id: task.id)) {
                                 Text("YES")
                                     .font(.system(size: 20, weight: .heavy, design: .rounded))
@@ -613,11 +399,11 @@ struct SupabaseTasksView: View {
                             .buttonStyle(.plain)
                         } else {
                             Button(intent: MarkTaskDoneIntent(id: task.id)) {
-                                Text("YES")
-                                    .font(.system(size: 16, weight: .heavy, design: .rounded))
+                                Text("NO")
+                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                                    .foregroundColor(Color(hex: "#FF3B30"))
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color(hex: "#0A84FF"))
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -628,169 +414,105 @@ struct SupabaseTasksView: View {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Single Task Widget View (local fallback)
+// MARK: - Single Task View (small + medium)
 // ─────────────────────────────────────────────
 
-struct SingleTaskWidgetView: View {
-    let entry: TallyEntry
+struct SingleTaskView: View {
+    let task: SupabaseWidgetTask
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        if !entry.supabaseTasks.isEmpty || SupabaseWidgetConfig.isConfigured {
-            SupabaseTasksView(tasks: entry.supabaseTasks, status: entry.statusMessage)
-        } else if entry.questions.isEmpty {
-            EmptyStateView()
-        } else {
-            let question = entry.questions.first!
-            let todayStr = todayString()
-            let ans = entry.todayAnswers.first { $0.questionId == question.id && $0.date == todayStr }
-            let isYes = ans?.value == "yes"
-            let isNo = ans?.value == "no"
+        let isYes = isAnsweredYesToday(task)
 
-            if family == .systemSmall {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(question.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
+        if family == .systemSmall {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(task.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
 
+                Spacer()
+
+                HStack {
                     Spacer()
-
                     if isYes {
                         Text("YES")
                             .font(.system(size: 36, weight: .heavy, design: .rounded))
                             .foregroundColor(Color(hex: "#0A84FF"))
-                    } else if isNo {
-                        Text("NO")
-                            .font(.system(size: 36, weight: .heavy, design: .rounded))
-                            .foregroundColor(Color(hex: "#FF3B30"))
                     } else {
-                        Text("NO")
-                            .font(.system(size: 36, weight: .heavy, design: .rounded))
-                            .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
+                        Button(intent: MarkTaskDoneIntent(id: task.id)) {
+                            Text("NO")
+                                .font(.system(size: 36, weight: .heavy, design: .rounded))
+                                .foregroundColor(Color(hex: "#FF3B30"))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .padding(4)
-                .widgetURL(URL(string: "tally://toggle/\(question.id)"))
-            } else {
-                HStack(alignment: .center) {
-                    Text(question.title)
+            }
+            .padding(4)
+        } else {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.title)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.white)
                         .lineLimit(2)
 
-                    Spacer()
+                    if isYes, let answeredAt = task.answeredAt {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 11))
+                            Text(formatTimestamp(answeredAt))
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(Color(hex: "#8E8E93"))
+                    }
+                }
 
-                    if isYes {
-                        Text("YES")
-                            .font(.system(size: 42, weight: .heavy, design: .rounded))
-                            .foregroundColor(Color(hex: "#0A84FF"))
-                    } else if isNo {
+                Spacer()
+
+                if isYes {
+                    Text("YES")
+                        .font(.system(size: 42, weight: .heavy, design: .rounded))
+                        .foregroundColor(Color(hex: "#0A84FF"))
+                } else {
+                    Button(intent: MarkTaskDoneIntent(id: task.id)) {
                         Text("NO")
                             .font(.system(size: 42, weight: .heavy, design: .rounded))
                             .foregroundColor(Color(hex: "#FF3B30"))
-                    } else {
-                        Text("NO")
-                            .font(.system(size: 42, weight: .heavy, design: .rounded))
-                            .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
-                .widgetURL(URL(string: "tally://toggle/\(question.id)"))
             }
+            .padding(.horizontal, 12)
         }
     }
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Multi-Task Widget View (local fallback)
+// MARK: - Widget 1: Single Task (small + medium)
 // ─────────────────────────────────────────────
 
-struct MultiTaskWidgetView: View {
+struct SingleTaskWidgetView: View {
     let entry: TallyEntry
 
     var body: some View {
-        if !entry.supabaseTasks.isEmpty || SupabaseWidgetConfig.isConfigured {
-            SupabaseTasksView(tasks: entry.supabaseTasks, status: entry.statusMessage)
-        } else if entry.questions.isEmpty {
-            EmptyStateView()
+        if let task = entry.tasks.first {
+            SingleTaskView(task: task)
         } else {
-            let displayedQuestions = Array(entry.questions.prefix(3))
-            let todayStr = todayString()
-
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(displayedQuestions) { question in
-                    let ans = entry.todayAnswers.first { $0.questionId == question.id && $0.date == todayStr }
-                    let isYes = ans?.value == "yes"
-                    let isNo = ans?.value == "no"
-
-                    Link(destination: URL(string: "tally://toggle/\(question.id)")!) {
-                        HStack(alignment: .center, spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(question.title)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .lineLimit(1)
-
-                                if let answeredAt = ans?.answeredAt, isYes {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 9))
-                                        Text(formatTimestamp(answeredAt))
-                                            .font(.system(size: 11))
-                                    }
-                                    .foregroundColor(Color(hex: "#8E8E93"))
-                                }
-                            }
-
-                            Spacer()
-
-                            Circle()
-                                .fill(Color(hex: question.safeColor))
-                                .frame(width: 10, height: 10)
-
-                            if isYes {
-                                Text("YES")
-                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                    .foregroundColor(Color(hex: "#0A84FF"))
-                                    .frame(width: 48, alignment: .trailing)
-                            } else if isNo {
-                                Text("NO")
-                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                    .foregroundColor(Color(hex: "#FF3B30"))
-                                    .frame(width: 48, alignment: .trailing)
-                            } else {
-                                Text("NO")
-                                    .font(.system(size: 20, weight: .heavy, design: .rounded))
-                                    .foregroundColor(Color(hex: "#FF3B30").opacity(0.85))
-                                    .frame(width: 48, alignment: .trailing)
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 2)
+            EmptyStateView(message: entry.statusMessage ?? "Open Tally to add tasks.")
         }
     }
 }
-
-// ─────────────────────────────────────────────
-// MARK: - Widget Definitions
-// ─────────────────────────────────────────────
 
 struct SingleTaskWidget: Widget {
     let kind: String = "SingleTaskWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(
-            kind: kind,
-            provider: TallyProvider()
-        ) { entry in
+        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
             SingleTaskWidgetView(entry: entry)
-                .containerBackground(for: .widget) {
-                    Color(hex: "#1C1C1E")
-                }
+                .containerBackground(for: .widget) { Color(hex: "#1C1C1E") }
         }
         .configurationDisplayName("Task")
         .description("Tracks one task")
@@ -798,18 +520,25 @@ struct SingleTaskWidget: Widget {
     }
 }
 
+// ─────────────────────────────────────────────
+// MARK: - Widget 2: Multi Task (medium + large)
+// ─────────────────────────────────────────────
+
+struct MultiTaskWidgetView: View {
+    let entry: TallyEntry
+
+    var body: some View {
+        SupabaseTasksView(tasks: Array(entry.tasks.prefix(3)), status: entry.statusMessage)
+    }
+}
+
 struct MultiTasksWidget: Widget {
     let kind: String = "MultiTasksWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(
-            kind: kind,
-            provider: TallyProvider()
-        ) { entry in
+        StaticConfiguration(kind: kind, provider: TallyProvider()) { entry in
             MultiTaskWidgetView(entry: entry)
-                .containerBackground(for: .widget) {
-                    Color(hex: "#1C1C1E")
-                }
+                .containerBackground(for: .widget) { Color(hex: "#1C1C1E") }
         }
         .configurationDisplayName("Tasks")
         .description("Tracks up to 3 tasks")
