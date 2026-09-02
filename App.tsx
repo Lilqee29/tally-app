@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator, Linking, Text, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, Linking, Text, StyleSheet, AppState } from 'react-native';
 import { useStore } from './src/store/useStore';
 import { MainScreen } from './src/screens/MainScreen';
 import { colors } from './src/theme/colors';
@@ -50,8 +50,7 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  // Poll Supabase for widget-originated changes
-  // Faster when online (5s), slower when offline (30s) to avoid wasted requests
+  // Poll Supabase for widget-originated changes & sync immediately on app foreground
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -61,7 +60,17 @@ export default function App() {
 
     poll();
     const interval = setInterval(poll, isOnline ? 5000 : 30000);
-    return () => clearInterval(interval);
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        poll();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, [isLoaded, isOnline]);
 
   if (!isLoaded) {

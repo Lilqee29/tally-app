@@ -74,16 +74,8 @@ export async function syncStateToSupabaseWidget(state: TallyState): Promise<void
   });
 
   try {
-    await fetch(restUrl('widget_tasks'), {
-      method: 'PATCH',
-      headers: headers({
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      }),
-      body: JSON.stringify({ active: false }),
-    });
-
     if (rows.length > 0) {
+      // 1. Upsert current active tasks first so they are never temporarily missing
       const response = await fetch(restUrl('widget_tasks?on_conflict=id'), {
         method: 'POST',
         headers: headers({
@@ -96,6 +88,27 @@ export async function syncStateToSupabaseWidget(state: TallyState): Promise<void
       if (!response.ok) {
         throw new Error(`Supabase widget sync failed with ${response.status}`);
       }
+
+      // 2. Deactivate any deleted tasks (tasks whose IDs are no longer in questions list)
+      const currentIds = rows.map((r) => `"${r.id}"`).join(',');
+      await fetch(restUrl(`widget_tasks?id=not.in.(${currentIds})`), {
+        method: 'PATCH',
+        headers: headers({
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        }),
+        body: JSON.stringify({ active: false }),
+      });
+    } else {
+      // If questions list is empty, mark all as inactive
+      await fetch(restUrl('widget_tasks'), {
+        method: 'PATCH',
+        headers: headers({
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        }),
+        body: JSON.stringify({ active: false }),
+      });
     }
     markOnline();
   } catch {

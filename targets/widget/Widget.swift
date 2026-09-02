@@ -177,7 +177,7 @@ struct SupabaseWidgetClient {
 }
 
 // ─────────────────────────────────────────────
-// MARK: - Interactive Intents
+// MARK: - Interactive Intents (Optimistic 0ms UI)
 // ─────────────────────────────────────────────
 
 struct MarkTaskDoneIntent: AppIntent {
@@ -191,8 +191,34 @@ struct MarkTaskDoneIntent: AppIntent {
     init(id: String) { self.id = id }
 
     func perform() async throws -> some IntentResult {
-        try await SupabaseWidgetClient().setAnsweredYes(id: id)
+        let nowStr = ISO8601DateFormatter().string(from: Date())
+        let todayStr = todayString()
+
+        // 1. Instant local optimistic update (0ms UI reaction)
+        if var cached = TaskCache.load() {
+            if let idx = cached.firstIndex(where: { $0.id == id }) {
+                let t = cached[idx]
+                cached[idx] = SupabaseWidgetTask(
+                    id: t.id,
+                    title: t.title,
+                    displayOrder: t.displayOrder,
+                    dotColor: t.dotColor,
+                    todayValue: "yes",
+                    answeredDate: todayStr,
+                    answeredAt: nowStr
+                )
+                TaskCache.save(cached)
+            }
+        }
+
+        // 2. Trigger timeline reload immediately
         WidgetCenter.shared.reloadAllTimelines()
+
+        // 3. Background Supabase sync
+        Task {
+            try? await SupabaseWidgetClient().setAnsweredYes(id: id)
+        }
+
         return .result()
     }
 }
@@ -208,8 +234,31 @@ struct SetTaskUndoneIntent: AppIntent {
     init(id: String) { self.id = id }
 
     func perform() async throws -> some IntentResult {
-        try await SupabaseWidgetClient().clearAnsweredYes(id: id)
+        // 1. Instant local optimistic update (0ms UI reaction)
+        if var cached = TaskCache.load() {
+            if let idx = cached.firstIndex(where: { $0.id == id }) {
+                let t = cached[idx]
+                cached[idx] = SupabaseWidgetTask(
+                    id: t.id,
+                    title: t.title,
+                    displayOrder: t.displayOrder,
+                    dotColor: t.dotColor,
+                    todayValue: nil,
+                    answeredDate: nil,
+                    answeredAt: nil
+                )
+                TaskCache.save(cached)
+            }
+        }
+
+        // 2. Trigger timeline reload immediately
         WidgetCenter.shared.reloadAllTimelines()
+
+        // 3. Background Supabase sync
+        Task {
+            try? await SupabaseWidgetClient().clearAnsweredYes(id: id)
+        }
+
         return .result()
     }
 }
@@ -437,9 +486,12 @@ struct SingleTaskView: View {
                 HStack {
                     Spacer()
                     if isYes {
-                        Text("YES")
-                            .font(.system(size: 36, weight: .heavy, design: .rounded))
-                            .foregroundColor(Color(hex: "#0A84FF"))
+                        Button(intent: SetTaskUndoneIntent(id: task.id)) {
+                            Text("YES")
+                                .font(.system(size: 36, weight: .heavy, design: .rounded))
+                                .foregroundColor(Color(hex: "#0A84FF"))
+                        }
+                        .buttonStyle(.plain)
                     } else {
                         Button(intent: MarkTaskDoneIntent(id: task.id)) {
                             Text("NO")
@@ -473,9 +525,12 @@ struct SingleTaskView: View {
                 Spacer()
 
                 if isYes {
-                    Text("YES")
-                        .font(.system(size: 42, weight: .heavy, design: .rounded))
-                        .foregroundColor(Color(hex: "#0A84FF"))
+                    Button(intent: SetTaskUndoneIntent(id: task.id)) {
+                        Text("YES")
+                            .font(.system(size: 42, weight: .heavy, design: .rounded))
+                            .foregroundColor(Color(hex: "#0A84FF"))
+                    }
+                    .buttonStyle(.plain)
                 } else {
                     Button(intent: MarkTaskDoneIntent(id: task.id)) {
                         Text("NO")
